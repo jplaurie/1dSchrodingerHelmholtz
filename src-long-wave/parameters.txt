@@ -1,0 +1,18 @@
+N = 1024
+Lx = 6.28319
+g = 1e+08
+================ Dissipation =====================
+nupower = 8 nu = 0
+alphapower = -2 alpha = 0
+================ Timestepping =========================
+FLAG_TIMESTEP_ETDRK = 1
+FLAG_ETDRK_ORDER = 4
+dt = 0.0001
+nsteps = 999999999
+outstep = 100
+================ Forcing =========================
+FLAG_FORCE_ON = 0
+FLAG_FORCE_EXP = 0
+FLAG_FORCE_AMP_RESCALE = 0
+kf = 256 dk = 4 Amp = 1
+force_power = 4
