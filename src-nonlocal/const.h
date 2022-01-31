@@ -1,14 +1,10 @@
 /*
-
 Programme to solve the 1D long-wave limit Optical Wave Turbulence equation
 
- i PSI_t = - PSI_xx    - (1/2) |PSI|^2 PSI  -(1/2g) |PSI|^_xx  PSI  + dissipation + forcing
+ i PSI_t = - PSI_xx     -(1/2)*[(1 - (1/g)d_xx)^-1 |PSI|]  PSI  + dissipation + forcing
  
-
 Author: Jason Laurie
 Date: 31/01/2022
-
-
 */
 
 const int N = 1024;                      //number of spatial grid points

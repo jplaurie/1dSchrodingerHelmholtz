@@ -53,7 +53,7 @@ fftw_execute(FFT);
 
 psi_hat_M /= double(M);            //normalize
 
-psi_hat_M %= -0.5*(1.0 - (k2/g));
+psi_hat_M %= -0.5*pow(1.0+(k2/g), -1.0);
 
 dealias(psi_hat_M);
 

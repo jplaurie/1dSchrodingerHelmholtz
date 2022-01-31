@@ -6,7 +6,7 @@ OBJS = main.o linear.o nonlinear.o read.o energy.o intensity.o spectrum.o initia
 #LFLAGS = $(DEBUG) -lfftw3 -lfftw3_threads -L/usr/local/lib/ -lopenblas -larmadillo -lm -lpthread
 
 #The following is for mac os x
-CC = g++-mp-10 -std=c++14 -Wall -O3 -fopenmp
+CC = g++-mp-9 -std=c++14 -Wall -O3 -fopenmp
 DEBUG = 
 CFLAGS = -c $(DEBUG) -I/opt/local/include
 LFLAGS = $(DEBUG) -L/opt/local/lib -framework Accelerate -march=native -lfftw3 -lfftw3_threads -lopenblas -lm -lpthread -larmadillo

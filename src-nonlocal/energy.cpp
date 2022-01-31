@@ -14,8 +14,8 @@
 using namespace std;
 using namespace arma;
 
-static double Lin_E,Non_E1, Non_E2, Int,k,wave_diss_alpha,wave_diss_nu,energy_diss_alpha,energy_diss_nu, psi_hat2, psi2;
-static cx_rowvec psi2_hat(N,fill::zeros),psi_non2_hat(N,fill::zeros), k2(M,fill::zeros);
+static double Lin_E,Non_E, Int,k,wave_diss_alpha,wave_diss_nu,energy_diss_alpha,energy_diss_nu, psi_hat2, psi2;
+static cx_rowvec psi2_hat(N,fill::zeros), k2(M,fill::zeros);
 void define_k2(cx_rowvec & k2_temp);
 void embed_N_M( cx_rowvec A, cx_rowvec & B);
 void embed_M_N( cx_rowvec B, cx_rowvec & A);
@@ -36,21 +36,19 @@ void energy(double runtime, int out_count, cx_rowvec psi_hat, cx_rowvec psi, dou
 	    energy_diss_nu = 0.0;
     
 	    Lin_E = 0.0;
-	    Non_E1 = 0.0;
-        Non_E2 = 0.0;
+	    Non_E = 0.0;
 	    Int = 0.0;
 
 
   	define_k2(k2);
-    
     embed_N_M(psi_hat,psi_hat_M);
+ 
     fftw_execute(IFFT);
     psi_M %= conj(psi_M);   
     fftw_execute(FFT);
     psi_hat_M /= double(M);
+    psi_hat_M %= pow( 1.0 + (k2/g) ,-0.5);
     embed_M_N(psi_hat_M, psi2_hat);
-    psi_hat_M %= pow( k2/g , 0.5);
-    embed_M_N(psi_hat_M, psi_non2_hat);
 
    
 	    for(int i = 0; i < N/2; i++){
@@ -59,8 +57,7 @@ void energy(double runtime, int out_count, cx_rowvec psi_hat, cx_rowvec psi, dou
 	        psi_hat2 = pow( abs(psi_hat(i)),2.0);
 	        psi2 = pow(abs(psi(i)),2.0);
 	        Lin_E += Lx * k*k  * psi_hat2; 
-	        Non_E1 -= Lx* 0.25*pow(abs(psi2_hat(i)),2.0);
-            Non_E2 += Lx* 0.25*pow(abs(psi_non2_hat(i)),2.0);
+	        Non_E -= Lx* 0.25*pow(abs(psi2_hat(i)),2.0);
 	        Int += dx  * psi2;
         
 	        wave_diss_alpha += 2.0*alpha*pow(k*k,alphapower) * psi_hat2 ;
@@ -74,8 +71,7 @@ void energy(double runtime, int out_count, cx_rowvec psi_hat, cx_rowvec psi, dou
 	        psi2 = pow(abs(psi(N-i-1)),2.0);
         
 	        Lin_E += Lx * k*k * psi_hat2;
-            Non_E1 -= Lx* 0.25*pow(abs(psi2_hat(N-i-1)),2.0);
-            Non_E2 += Lx* 0.25*pow(abs(psi_non2_hat(N-i-1)),2.0);
+	        Non_E -= Lx * 0.25*pow(abs(psi2_hat(N-i-1)),2.0);
 	        Int += dx * psi2;
 
 	        wave_diss_alpha += 2.0*alpha*pow(k*k,alphapower) * psi_hat2 ;
@@ -84,7 +80,7 @@ void energy(double runtime, int out_count, cx_rowvec psi_hat, cx_rowvec psi, dou
 	        energy_diss_nu += 2.0*nu*pow(k*k,nupower+1.0) * psi_hat2;
 
 	       
-	        E_out = Lin_E + Non_E1 + Non_E2;
+	        E_out = Lin_E + Non_E;
 
 
 	        
@@ -109,7 +105,7 @@ void energy(double runtime, int out_count, cx_rowvec psi_hat, cx_rowvec psi, dou
 	    fout_E << scientific;
 	    fout_E.precision(12);
     
-	        fout_E << runtime << " " << Lin_E << " " << Non_E1 << " " << Non_E2 << " " << Lin_E + Non_E1 + Non_E2 << endl;
+	        fout_E << runtime << " " << Lin_E << " " << Non_E << " " << Lin_E + Non_E << endl;
     
 	    fout_E.close();
     
