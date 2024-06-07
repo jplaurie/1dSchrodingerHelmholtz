@@ -1,20 +1,20 @@
 OBJS = main.o linear.o nonlinear.o read.o energy.o intensity.o spectrum.o initialise.o flux.o
 #this is for linux machines
-#CC = g++ -Wall -O3 -std=c++14 -fopenmp
-#DEBUG = 
-#CFLAGS = -c $(DEBUG)
-#LFLAGS = $(DEBUG) -lfftw3 -lfftw3_threads -L/usr/local/lib/ -lopenblas -larmadillo -lm -lpthread
+CC = g++ -Wall -O3 -std=c++14 -fopenmp
+DEBUG = 
+CFLAGS = -c $(DEBUG)
+LFLAGS = $(DEBUG) -lfftw3 -lfftw3_threads -L/usr/local/lib/ -lopenblas -larmadillo -lm -lpthread
 
 #The following is for mac os x
-CC = g++-mp-10 -std=c++14 -Wall -O3 -fopenmp
-DEBUG = 
-CFLAGS = -c $(DEBUG) -I/opt/local/include
-LFLAGS = $(DEBUG) -L/opt/local/lib -framework Accelerate -march=native -lfftw3 -lfftw3_threads -lopenblas -lm -lpthread -larmadillo
+#CC = g++-mp-11 -Wall -O3 -fopenmp
+#DEBUG = 
+#CFLAGS = -c $(DEBUG) -I/opt/local/include
+#LFLAGS = $(DEBUG) -L/opt/local/lib -framework Accelerate -march=native -lfftw3 -lfftw3_threads -lopenblas -lm -lpthread -larmadillo
 
 
 
-owt1d: $(OBJS)
-	$(CC) -o owt1d $(OBJS) $(LFLAGS)
+owt1d-long: $(OBJS)
+	$(CC) -o owt1d-long $(OBJS) $(LFLAGS)
 
 main.o: main.cpp const.h functions.h
 	$(CC) $(CFLAGS) main.cpp
@@ -50,5 +50,5 @@ flux.o: flux.cpp const.h
 	$(CC) $(CFLAGS) flux.cpp
 
 clean:
-	rm -rfv *.o ./output/ *~ owt1d
+	rm -rfv *.o ./output/ *~ owt1d-long
 

@@ -1,29 +1,26 @@
 /*
+Programme to solve the 1D Long-Wave OWT equation
 
-Programme to solve the 1D long-wave limit Optical Wave Turbulence equation
-
- i PSI_t = - PSI_xx    - (1/2) |PSI|^2 PSI  -(1/2g) |PSI|^_xx  PSI  + dissipation + forcing
- 
+i PSI_t = - (1/2) PSI_xx    -  |PSI|^2 PSI  -  (1/g)* PSI |PSI|^2_xx      + dissipation + forcing
 
 Author: Jason Laurie
 Date: 31/01/2022
 
-
 */
 
-const int N = 1024;                      //number of spatial grid points
+const int N = 4096;                      //number of spatial grid points
 const int M = 3*N/2;                      //defined the size of the anti-aliasing array M=3N/2
-const double g = 100000000.0;
+const double g = 512.0;
 const int num_threads = 1;
-const int NBIN = N;
+
 
 //===============set timestepping parameters============================
 
 const bool FLAG_TIMESTEP_ETDRK = true;  //if true routine is ETDRK4 else RK2
 const int FLAG_ETDRK_ORDER = 4;
-const double dt = 1.e-4;                //time step
+const double dt = 1.e-7;                //time step
 const int nsteps = 999999999;           //number of total time steps
-const int outstep = 1e2;                //outputs data at these time steps
+const int outstep = 5e4;                //outputs data at these time steps
 //======================parameters for domain ===============================
 const double pi = 3.14159265358979323846;   //pi
 const double Lx = 2.0*pi;                   //length of the box
@@ -31,8 +28,11 @@ const double dx = Lx/ double(N);            //grid size
 
 
 //===========parameters from equation =============================
-const double nu = 0.e-40;//1.e-32;					//hyperviscosity coefficient
-const double nupower = 8.0;					//power of the laplacian 	
+const bool FLAG_HYPER_DISS = true;
+const double nu = 1.e-38;//1.e-32;					//hyperviscosity coefficient
+const double nupower = 6.0;					//power of the laplacian 	
+
+const bool FLAG_HYPO_DISS = false;
 const double alpha = 0.e2;					//friction coefficient
 const double alphapower =-2.0;				//negative power of the laplacian
 
