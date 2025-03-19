@@ -15,7 +15,7 @@ using namespace arma;
 
 static double ignore_in, real_part, imag_part;
 
-void readData(cx_rowvec & psi,cx_rowvec & psi_hat, double & run_time, int & file_number, fftw_plan FFTN){
+void readData(cx_rowvec & psi,cx_rowvec & psi_hat, double & run_time_start, int & file_number_start, fftw_plan FFTN){
     
 /*
     reads in initial data located in file with number given by curframe.dat
@@ -27,13 +27,13 @@ imag_part = 0.0;
     
 fstream filein("./data/curframe.dat");
 filein.precision(12);
-filein >> run_time >> file_number;
+filein >> run_time_start >> file_number_start;
     
 
-if(file_number >= 0 && FLAG_INITIAL_CONDITION == "FILE"){
+if(file_number_start >= 0 && FLAG_INITIAL_CONDITION == "FILE"){
 
 	ostringstream in_data;
-	in_data << "./data/psi." << setw(6) << setfill('0') << file_number << ends;
+	in_data << "./data/psi." << setw(6) << setfill('0') << file_number_start << ends;
 	string filename = in_data.str();
 	ifstream filein2(filename.c_str());
 	filein2.precision(12);
@@ -43,15 +43,15 @@ if(file_number >= 0 && FLAG_INITIAL_CONDITION == "FILE"){
 			psi(i)= complex<double>(real_part,imag_part);
 	}    
 
-	cout << "Loading data from file psi." << setw(6) << setfill('0') << file_number << endl;
-	cout << "Runtime of simulation = " << run_time << endl;
+	cout << "Loading data from file psi." << setw(6) << setfill('0') << file_number_start << endl;
+	cout << "Runtime of simulation = " << run_time_start << endl;
 	cout << "Loading successful" << endl;
 }
-else if(file_number < 0 || FLAG_INITIAL_CONDITION == "ZERO"){
+else if(file_number_start < 0 || FLAG_INITIAL_CONDITION == "ZERO"){
 
 
-	file_number = 0;
-	run_time = 0.0;
+	file_number_start = 0;
+	run_time_start = 0.0;
 	psi.zeros();
 	/*ofstream fout_read("./data/psi.000000");
 	fout_read.precision(12);
@@ -66,7 +66,7 @@ else if(file_number < 0 || FLAG_INITIAL_CONDITION == "ZERO"){
 	printWavefunction(0 , psi );
 
 	cout << "Simulation starting...from zero state" << endl;
-	cout << "time = " << run_time << endl;
+	cout << "time = " << run_time_start << endl;
 	cout << "file_number = 0" << endl; 
 
 }
@@ -89,7 +89,7 @@ ofstream fout_data("./parameters.txt");
 
 fout_data << "N = " << N <<  endl;
 fout_data << "Lx = " << Lx << endl; 
-fout_data << "c = " << c << " g = " << g << " mu = " << mu << " beta = " << beta << endl;;
+fout_data << "c = " << c << " g = " << g << " mu = " << mu << " beta = " << beta_param << endl;;
 fout_data <<"================ Dissipation =====================" << endl;
 fout_data << "nupower = " << nupower << " nu = " << nu << endl;
 fout_data << "alphapower = " << alphapower << " alpha = " << alpha << endl;
@@ -119,7 +119,7 @@ fout_data.close();
 
 cout << "N = " << N <<  endl;
 cout << "Lx = " << Lx << endl; 
-cout << "c = " << c << " g = " << g << " mu = " << mu << " beta = " << beta << endl;;
+cout << "c = " << c << " g = " << g << " mu = " << mu << " beta = " << beta_param << endl;;
 cout <<"================ Dissipation =====================" << endl;
 cout << "nupower = " << nupower << " nu = " << nu << endl;
 cout << "alphapower = " << alphapower << " alpha = " << alpha << endl;

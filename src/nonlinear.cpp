@@ -59,7 +59,7 @@ psi_hat_M /= double(M);
 
 //compute nonlinear term based on model
 if(FLAG_MODEL_TYPE == "SHE"){  
-    psi_hat_M %= g*pow(1.0+(beta*k2), -1.0);
+    psi_hat_M %= g*pow(1.0+(beta_param*k2), -1.0);
 }
 else if(FLAG_MODEL_TYPE == "NLSE"){  
     psi_hat_M *= g;

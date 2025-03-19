@@ -3,7 +3,7 @@ Programme to solve the 1D Schrödinger-Helmholtz / nonlinear Schrödinger equati
 
 "SHE"
 
-i PSI_t = c * PSI_xx    +  g * PSI (1 - beta * d^2_xx)^-1 |PSI|^2  + mu * PSI    + dissipation + forcing
+i PSI_t = c * PSI_xx    +  g * PSI (1 - beta_param * d^2_xx)^-1 |PSI|^2  + mu * PSI    + dissipation + forcing
 
 or
 
@@ -40,8 +40,10 @@ int main(){
    
 	//define variables counting files and run time 
 
+	int file_number_start = 0;
 	int file_number = 0;
 	int avg_number = 0;
+	double run_time_start = 0.0;
 	double run_time = 0.0;
 	
 	//clock variables
@@ -123,7 +125,7 @@ int main(){
 
     
 	//read in initial data
-    readData(psi, psi_hat, run_time, file_number, FFTN);      
+    readData(psi, psi_hat, run_time_start, file_number_start, FFTN);      
    
     
 	system("mkdir ./output");			//Creates the Folders for Outputting
@@ -222,42 +224,42 @@ int main(){
 			fftw_execute(IFFTN);
          
 			//prints wave function			
-			printWavefunction(file_number,psi); //computes intensity
+			printWavefunction(file_number_start + file_number,psi); //computes intensity
 
 			if(FLAG_OUTPUT_DIAGONOSTICS == true){
 				
 				//compute and prints waveaction
 				computeWaveaction( psi_hat, waveaction);
-				printWaveaction( run_time, file_number,  waveaction);
+				printWaveaction( run_time_start + run_time, file_number_start + file_number,  waveaction);
 
 				//compute and prints energy
 				computeEnergy(psi_hat,  psi,linear_energy,  potential_energy,  nonlinear_energy, psi_M, psi_hat_M,FFT, IFFT);
-				printEnergy(run_time, file_number,  linear_energy, potential_energy, nonlinear_energy);
+				printEnergy(run_time_start + run_time, file_number_start + file_number,  linear_energy, potential_energy, nonlinear_energy);
 
 						
 				//compute and print dissipation rates		
 				computeDissipationRate(psi_hat, waveaction_dissipation_rate_alpha, waveaction_dissipation_rate_nu,energy_dissipation_rate_alpha,  energy_dissipation_rate_nu);
-				printDissipationRate(run_time, file_number, waveaction_dissipation_rate_alpha, waveaction_dissipation_rate_nu, energy_dissipation_rate_alpha, energy_dissipation_rate_nu);
+				printDissipationRate(run_time_start + run_time, file_number_start + file_number, waveaction_dissipation_rate_alpha, waveaction_dissipation_rate_nu, energy_dissipation_rate_alpha, energy_dissipation_rate_nu);
 
 				//compute and print spectrum
 				computeSpectrum(psi_hat, wave_spectrum);
-				printSpectrum(file_number, avg_number, wave_spectrum, wave_spectrum_avg);
+				printSpectrum(file_number_start + file_number, avg_number, wave_spectrum, wave_spectrum_avg);
 
 				//compute and print flux
 				computeFlux(psi_hat,  L, psi_M , psi_hat_M,  wave_flux , energy_flux, FFT, IFFT );
-				printFlux(file_number, avg_number, wave_flux,  energy_flux, wave_flux_avg, energy_flux_avg );
+				printFlux(file_number_start + file_number, avg_number, wave_flux,  energy_flux, wave_flux_avg, energy_flux_avg );
 			}		
 			
 			//restore state (just in case)
 			psi_hat = psi_hat_temp;
 						
 			//records some basic info to terminal
-			cout << "time = " << run_time << " file = " << file_number << " Energy = " << linear_energy + potential_energy + nonlinear_energy << endl;        
+			cout << "time = " << run_time_start + run_time << " file = " << file_number_start + file_number << " Energy = " << linear_energy + potential_energy + nonlinear_energy << endl;        
 
 			//overwrite curframe.dat
 			ofstream fout_count("./data/curframe.dat");
 			fout_count << scientific; fout_count.precision(12);
-			fout_count << run_time << " " << file_number << endl;    
+			fout_count << run_time_start + run_time  << " " << file_number_start + file_number << endl;    
 		}
 	}
 	 

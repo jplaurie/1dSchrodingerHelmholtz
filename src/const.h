@@ -45,7 +45,7 @@ const double g = -1.0;
 const double mu = 0.0;
 
 //SHE parameter
-const double beta = 1.0;
+const double beta_param = 1.0;
 
 //grid spacing
 const double dx = Lx / double(N);         
