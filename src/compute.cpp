@@ -108,8 +108,8 @@ void computeWaveaction(cx_rowvec psi_hat, double & waveaction_out){
         	         
 	for(int i = 0; i < N/2; i++){
 
-	    waveaction_out +=  Lx * pow( abs(psi_hat(i)),2.0);
-    	waveaction_out +=  Lx * pow( abs(psi_hat(N-i-1)),2.0);	        	    
+		waveaction_out +=  Lx * pow( abs(psi_hat(i)),2.0);
+    		waveaction_out +=  Lx * pow( abs(psi_hat(N-i-1)),2.0);	        	    
     }
 return; 
 }
