@@ -1,0 +1,43 @@
+# Small, reproducible installation test. See ../params.txt for a fully
+# commented description of every setting.
+
+# Grid and fixed-step run controls.
+gridPoints 64
+domainLength 6.283185307179586
+timeStep 0.0001
+numberOfSteps 20
+outputIntervalSteps 10
+
+# Equation flag: schrodingerHelmholtz, longWave, or nonlinearSchrodinger.
+model schrodingerHelmholtz
+integrator etd4
+dispersionCoefficient -0.5
+nonlinearityCoefficient -1
+chemicalPotential 0
+helmholtzParameter 1
+
+# Small-scale damping; zero hypoviscosity disables large-scale damping.
+hyperviscosity 1e-18
+hyperviscosityOrder 4
+hypoviscosity 0
+hypoviscosityOrder -2
+
+# Reproducible stochastic annular forcing.
+forcingEnabled true
+forcingProfile annulus
+forcingWavenumber 8
+forcingWidth 1.1
+forcingAmplitude 0.05
+forcingShapeOrder 4
+forcingLogWidth 0.1
+targetWaveActionInjectionRate 0
+randomSeed 123456
+
+# One CPU thread is fastest for this small grid. Valid values are 0, 1, and 2.
+threadCount 1
+
+# Output and automatic-restart controls.
+writeModeDiagnostics true
+overwriteOutput false
+dataDirectory data/quickstart
+outputDirectory output/quickstart

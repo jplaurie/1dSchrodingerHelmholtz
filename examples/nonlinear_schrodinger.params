@@ -1,0 +1,35 @@
+# Small local cubic-NLS example. helmholtzParameter is set to zero for clarity
+# and is ignored whenever model is nonlinearSchrodinger.
+gridPoints 64
+domainLength 6.283185307179586
+timeStep 0.0001
+numberOfSteps 20
+outputIntervalSteps 10
+
+model nonlinearSchrodinger
+integrator etd4
+dispersionCoefficient -0.5
+nonlinearityCoefficient -1
+chemicalPotential 0
+helmholtzParameter 0
+
+hyperviscosity 1e-18
+hyperviscosityOrder 4
+hypoviscosity 0
+hypoviscosityOrder -2
+
+forcingEnabled true
+forcingProfile annulus
+forcingWavenumber 8
+forcingWidth 1.1
+forcingAmplitude 0.05
+forcingShapeOrder 4
+forcingLogWidth 0.1
+targetWaveActionInjectionRate 0
+randomSeed 123456
+
+threadCount 1
+writeModeDiagnostics true
+overwriteOutput false
+dataDirectory data/nonlinear-schrodinger
+outputDirectory output/nonlinear-schrodinger

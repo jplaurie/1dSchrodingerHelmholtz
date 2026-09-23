@@ -1,0 +1,93 @@
+# Representative forced/dissipated Schrödinger-Helmholtz run.
+#
+# Format: one case-sensitive "key value" pair per line. Text after # is a
+# comment. Unknown keys and invalid values stop the program rather than being
+# silently ignored. The README derives the three equations and their energies.
+
+# ------------------------- Grid and run length ----------------------------
+# Number of periodic grid points. Must be a multiple of 4 in [8, 16384].
+gridPoints 512
+
+# Physical length of the periodic interval. With L = 2*pi, Fourier mode m has
+# physical wavenumber k = m.
+domainLength 6.283185307179586
+
+# Fixed time step, number of additional steps in this invocation, and the
+# number of steps between stored frames. The final step is always stored.
+timeStep 5e-5
+numberOfSteps 100000
+outputIntervalSteps 1000
+
+# ----------------------------- Equation ----------------------------------
+# Choose exactly one model:
+#   schrodingerHelmholtz  full nonlocal Helmholtz inverse
+#   longWave              first-order long-wave expansion of that inverse
+#   nonlinearSchrodinger  local cubic 1D nonlinear Schrödinger equation
+model schrodingerHelmholtz
+
+# Time integrator: etd4 (recommended), etd2, or integrating-factor rk2.
+integrator etd4
+
+# Equation coefficients c, g, and mu. In all three models the linear part is
+#     i psi_t = c psi_xx + mu psi + ...
+dispersionCoefficient -0.5
+nonlinearityCoefficient -1
+chemicalPotential 0
+
+# Nonlocality beta. The nonlinear density multiplier is
+#   1/(1 + beta*k^2)  for schrodingerHelmholtz,
+#   1 - beta*k^2      for longWave, and
+#   1                 for nonlinearSchrodinger (beta is ignored).
+# The long-wave approximation is physically appropriate only where
+# beta*k^2 << 1 for the dynamically important modes.
+helmholtzParameter 1
+
+# ---------------------------- Dissipation --------------------------------
+# Damping is nu*(-d_xx)^p + alpha*(-d_xx)^q. Set a coefficient to zero to
+# disable that term. A negative hypoviscosity order removes the zero mode.
+hyperviscosity 1e-36
+hyperviscosityOrder 8
+hypoviscosity 1000
+hypoviscosityOrder -2
+
+# ------------------------------ Forcing ----------------------------------
+# false gives an unforced run. Stochastic profiles are annulus, gaussian,
+# exponential, and logNormal. singleMode is deterministic and forces both
+# signs of k.
+forcingEnabled true
+forcingProfile annulus
+
+# These are physical wavenumbers, not array indices. forcingWidth is the
+# annulus half-width or Gaussian standard deviation. forcingShapeOrder is used
+# only by the exponential profile. forcingLogWidth is the standard deviation
+# of log(|k|/forcingWavenumber) for the log-normal profile.
+forcingWavenumber 64
+forcingWidth 2
+forcingAmplitude 1
+forcingShapeOrder 4
+forcingLogWidth 0.1
+
+# A positive value rescales a stochastic profile to this wave-action injection
+# coefficient. Zero retains forcingAmplitude. It is invalid for singleMode.
+targetWaveActionInjectionRate 0
+
+# Reproducible 64-bit seed. Zero selects a time-based seed and records it.
+randomSeed 20260923
+
+# ---------------------- Execution and output -----------------------------
+# FFTW/OpenMP thread count: 1 is recommended for normal grids, 2 can help near
+# the 16384-point limit, and 0 selects automatically but is still capped at 2.
+threadCount 1
+
+# Write every complex Fourier coefficient at each output frame. This can make
+# modes.csv large, so it is disabled for production runs by default.
+writeModeDiagnostics false
+
+# A restart_state.txt in dataDirectory always resumes that run. For a fresh
+# run, existing managed output is protected unless overwriteOutput is true.
+# To start from a physical field, uncomment the next line. Each row may be
+# either "real imaginary" or "x real imaginary" and must contain N samples.
+# initialConditionFile initial_condition.dat
+overwriteOutput false
+dataDirectory data/default
+outputDirectory output/default
