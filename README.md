@@ -146,7 +146,7 @@ the stochastic envelope so that $\sum_k|f(k)|^2$ equals the requested
 spectral injection coefficient.
 
 `singleMode` is deterministic rather than white noise. It sets
-$\widehat F_k=A$ at both modes satisfying $|k|=k_f$ and zero elsewhere.
+$\widehat{F}_k=A$ at both modes satisfying $|k|=k_f$ and zero elsewhere.
 `randomSeed` controls stochastic reproducibility; the complete generator state
 is included in checkpoints.
 
@@ -344,4 +344,3 @@ tests/        Numerical and end-to-end restart regression tests
 scripts/      Plotting notebooks, shared readers, and movie renderer
 params.txt    Representative forced/dissipated run
 ```
-
