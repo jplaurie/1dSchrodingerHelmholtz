@@ -1,0 +1,17 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using the metadata in this file."
+title: "1D Schrödinger–Helmholtz pseudo-spectral solver"
+type: software
+authors:
+  - family-names: Laurie
+    given-names: Jason
+    orcid: "https://orcid.org/0000-0002-3621-6052"
+abstract: "A C++20 pseudo-spectral solver for the one-dimensional Schrödinger–Helmholtz, long-wave, and cubic nonlinear Schrödinger equations."
+repository-code: "https://github.com/jplaurie/1dSchrodingerHelmholtz"
+url: "https://github.com/jplaurie/1dSchrodingerHelmholtz"
+license: BSD-3-Clause
+keywords:
+  - pseudo-spectral method
+  - Schrödinger–Helmholtz equation
+  - nonlinear Schrödinger equation
+  - wave turbulence
