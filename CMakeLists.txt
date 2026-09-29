@@ -19,6 +19,7 @@ add_library(sh1d_common
     src/fftw_utils.cpp
     src/spectral.cpp
     src/nonlinear.cpp
+    src/diagnostics.cpp
     src/output.cpp
     src/solver.cpp)
 target_include_directories(sh1d_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${FFTW_INCLUDE_DIR})

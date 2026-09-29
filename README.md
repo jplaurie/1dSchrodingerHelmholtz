@@ -338,12 +338,28 @@ this solver.
 ## Repository layout
 
 ```text
-src/          C++20 solver, parameter handling, FFTs, output, and restart
-examples/     Small reproducible parameter file
-tests/        Numerical and end-to-end restart regression tests
-scripts/      Plotting notebooks, shared readers, and movie renderer
-params.txt    Representative forced/dissipated run
+src/
+  main.cpp                    executable entry point
+  parameters.cpp/.hpp         parse, assign, validate, and record settings
+  spectral.cpp/.hpp           Fourier indexing and spectral constraints
+  fftw_utils.cpp/.hpp         reusable complex FFTW transforms
+  nonlinear.cpp/.hpp          dealiased nonlinear and density operators
+  integrator.hpp              shared ETD and integrating-factor formulas
+  solver.cpp/.hpp             forcing, integration, and run orchestration
+  diagnostics.cpp             invariants, spectra, fluxes, and mode output
+  output.cpp/.hpp             snapshots, checkpoints, and restart recovery
+examples/                     small reproducible parameter files
+tests/                        numerical, parameter, and restart regressions
+scripts/                      plotting notebooks, readers, and movie renderer
+params.txt                    representative forced/dissipated run
 ```
+
+Configuration strings are converted at the input boundary into typed `Model`,
+`Integrator`, and `ForcingProfile` values. Parsing, typed assignment, and
+cross-parameter validation are separate steps, so numerical code does not
+interpret raw configuration text. The solver similarly keeps run preparation,
+restart restoration, time stepping, diagnostics, and state output behind
+focused functions.
 
 ## License and citation
 
