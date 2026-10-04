@@ -142,10 +142,10 @@ void testResourceLimits() {
     p.gridPoints = 16'388;
     requireThrows([&] { validateParameters(p); }, "grid limit above 16384 was not enforced");
     p.gridPoints = 16'384;
-    p.threadCount = 3;
-    requireThrows([&] { validateParameters(p); }, "thread limit above two was not enforced");
-    p.threadCount = 2;
+    p.threadCount = 12;
     validateParameters(p);
+    p.threadCount = -1;
+    requireThrows([&] { validateParameters(p); }, "negative thread count was not rejected");
 }
 
 void testDensityResponse() {

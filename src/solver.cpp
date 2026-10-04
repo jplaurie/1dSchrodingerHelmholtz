@@ -347,6 +347,30 @@ RestartState Solver::prepareRun() {
     return state;
 }
 
+SpectralField Solver::makeBenchmarkState() const {
+    SpectralField wavefunction(parameters_.gridPoints);
+    for (std::size_t i = 0; i < wavefunction.size(); ++i) {
+        const double mode = static_cast<double>(signedWave(i, parameters_.gridPoints));
+        const double amplitude = 0.1 / ((1.0 + mode * mode) * (1.0 + mode * mode));
+        const double phase = 0.31 * mode + 0.017 * std::abs(mode);
+        wavefunction[i] = amplitude * Complex(std::cos(phase), std::sin(phase));
+    }
+    enforceStateConstraints(parameters_, wavefunction);
+    return wavefunction;
+}
+
+double Solver::benchmark(std::uint64_t warmupSteps, std::uint64_t measuredSteps) {
+    if (measuredSteps == 0)
+        throw std::runtime_error("benchmark requires at least one measured step");
+    SpectralField wavefunction = makeBenchmarkState();
+    for (std::uint64_t i = 0; i < warmupSteps; ++i)
+        step(wavefunction);
+    const auto start = std::chrono::steady_clock::now();
+    for (std::uint64_t i = 0; i < measuredSteps; ++i)
+        step(wavefunction);
+    return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+}
+
 double Solver::writeOutputFrame(const RestartState &state, DiagnosticsAverages &averages) {
     const double energy = appendDiagnostics(parameters_, nonlinearOperator_, state.time,
                                             state.frame, state.wavefunction, averages);

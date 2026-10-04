@@ -229,6 +229,38 @@ make test
 
 Use `-DSH1D_OPENMP=OFF` for a strictly serial build.
 
+## Performance benchmark
+
+This benchmark measures complete Schrödinger--Helmholtz ETD4-B timesteps at several spectral
+resolutions. Each step evaluates the nonlinearity four times, and each evaluation performs four
+complex transforms on a 3/2-padded grid. Points are medians of three calibrated trials lasting
+about 0.75 seconds; error bars span the observed minimum and maximum. The speedup panel is
+normalized by the separately compiled serial CPU executable.
+
+![Serial CPU and OpenMP/FFTW thread scaling](benchmarks/thread_scaling.svg)
+
+These results were measured on an AMD Ryzen 9 9900X using a serial build and threaded builds with
+1, 2, 4, 8, or 12 threads. Lower timestep time is better:
+
+| Resolution | CPU serial | 1 thread | 2 threads | 4 threads | 8 threads | 12 threads |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 512 | 0.0282 ms | 0.0285 ms | 0.108 ms | 0.166 ms | 0.308 ms | 0.573 ms |
+| 1,024 | 0.0592 ms | 0.0600 ms | 0.149 ms | 0.202 ms | 0.345 ms | 0.744 ms |
+| 2,048 | 0.131 ms | 0.132 ms | 0.221 ms | 0.269 ms | 0.404 ms | 0.818 ms |
+| 4,096 | 0.388 ms | 0.391 ms | 0.459 ms | 0.501 ms | 0.630 ms | 1.055 ms |
+| 8,192 | 0.916 ms | 0.926 ms | 0.962 ms | 1.017 ms | 1.185 ms | 1.608 ms |
+| 16,384 | 2.682 ms | 2.704 ms | 1.988 ms | 2.106 ms | 2.259 ms | 2.701 ms |
+
+One thread is fastest through 8,192 points. At the maximum supported resolution, two threads are
+best and provide a 1.35x speedup over the serial build; adding further threads reduces performance.
+The transforms are too small to amortize additional thread-management and synchronization costs.
+These results are specific to this machine and FFTW build.
+
+The timed interval starts after FFTW initialization and planning, allocation, coefficient and
+state construction, and three warm-up steps. Diagnostics and file output are excluded, so the
+figure measures sustained timestep throughput rather than process startup. Raw trials, system
+metadata, and reproduction scripts are in [`benchmarks/`](benchmarks/).
+
 ## Quick start
 
 Run the small forced example from the repository root:
@@ -281,7 +313,7 @@ Unknown keys, invalid values, and extra fields stop the run.
 | `targetWaveActionInjectionRate` | Rescale stochastic forcing when positive |
 | `randomSeed` | Reproducible 64-bit seed; zero selects and records a time-based seed |
 | `initialConditionFile` | Optional `real imag` or `x real imag` physical field |
-| `threadCount` | `1` or `2`; zero chooses automatically but is capped at two |
+| `threadCount` | FFTW/OpenMP threads; zero chooses automatically and is capped at two |
 | `writeModeDiagnostics` | Write every complex Fourier mode to `modes.csv` |
 | `overwriteOutput` | Replace managed output from an existing non-restart run |
 | `dataDirectory`, `outputDirectory` | State and diagnostic locations |
@@ -323,11 +355,11 @@ spectrum, and time diagnostics, plus a command-line movie renderer. See
 
 ## Parallel execution
 
-The solver is intentionally CPU-only and uses at most two FFTW/OpenMP threads.
-`gridPoints` is limited to 16384. A one-dimensional run at the usual
-$N=512$ performs small FFTs, so thread-management overhead outweighs the
-saved arithmetic; one thread is the recommended default. Two threads can help
-near the resolution limit.
+The solver is intentionally CPU-only and `gridPoints` is limited to 16384. Explicit positive
+`threadCount` values are accepted; zero automatically selects at most two threads. The benchmark
+above shows that one thread is the best default for ordinary resolutions and two threads can help
+at the resolution limit. Larger thread counts are available for other machines but are slower on
+the benchmark system.
 
 For parameter scans or ensemble statistics, run independent simulations in
 parallel with distinct `dataDirectory` and `outputDirectory` values. This
@@ -340,6 +372,7 @@ this solver.
 ```text
 src/
   main.cpp                    executable entry point
+  benchmark.cpp               warmed-up complete-timestep benchmark entry point
   parameters.cpp/.hpp         parse, assign, validate, and record settings
   spectral.cpp/.hpp           Fourier indexing and spectral constraints
   fftw_utils.cpp/.hpp         reusable complex FFTW transforms
@@ -349,6 +382,7 @@ src/
   diagnostics.cpp             invariants, spectra, fluxes, and mode output
   output.cpp/.hpp             snapshots, checkpoints, and restart recovery
 examples/                     small reproducible parameter files
+benchmarks/                   runner, raw timings, metadata, and scaling plot
 tests/                        numerical, parameter, and restart regressions
 scripts/                      plotting notebooks, readers, and movie renderer
 params.txt                    representative forced/dissipated run

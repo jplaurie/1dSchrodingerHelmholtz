@@ -8,6 +8,7 @@
 #include "types.hpp"
 
 #include <array>
+#include <cstdint>
 #include <random>
 #include <vector>
 
@@ -15,6 +16,7 @@ class Solver {
   public:
     explicit Solver(Parameters parameters);
     void run();
+    [[nodiscard]] double benchmark(std::uint64_t warmupSteps, std::uint64_t measuredSteps);
 
   private:
     void buildLinearOperator();
@@ -28,6 +30,7 @@ class Solver {
     void restoreRandomState(RestartState &state);
     void writeState(const RestartState &state);
     double writeOutputFrame(const RestartState &state, DiagnosticsAverages &averages);
+    [[nodiscard]] SpectralField makeBenchmarkState() const;
 
     Parameters parameters_;
     ComplexTransform baseTransform_;

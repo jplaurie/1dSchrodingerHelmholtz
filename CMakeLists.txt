@@ -14,7 +14,7 @@ find_path(FFTW_INCLUDE_DIR fftw3.h REQUIRED)
 find_library(FFTW_LIBRARY NAMES fftw3 REQUIRED)
 find_library(FFTW_THREADS_LIBRARY NAMES fftw3_threads)
 
-add_library(sh1d_common
+set(SH1D_COMMON_SOURCES
     src/parameters.cpp
     src/fftw_utils.cpp
     src/spectral.cpp
@@ -22,6 +22,7 @@ add_library(sh1d_common
     src/diagnostics.cpp
     src/output.cpp
     src/solver.cpp)
+add_library(sh1d_common ${SH1D_COMMON_SOURCES})
 target_include_directories(sh1d_common PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${FFTW_INCLUDE_DIR})
 target_link_libraries(sh1d_common PUBLIC ${FFTW_LIBRARY})
 target_compile_features(sh1d_common PUBLIC cxx_std_20)
@@ -41,9 +42,33 @@ endif()
 
 sh1d_enable_warnings(sh1d_common)
 
+set(SH1D_SERIAL_COMMON sh1d_common)
+if(SH1D_OPENMP AND OpenMP_CXX_FOUND)
+  add_library(sh1d_common_serial ${SH1D_COMMON_SOURCES})
+  target_include_directories(sh1d_common_serial
+    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src ${FFTW_INCLUDE_DIR})
+  target_link_libraries(sh1d_common_serial PUBLIC ${FFTW_LIBRARY})
+  target_compile_features(sh1d_common_serial PUBLIC cxx_std_20)
+  sh1d_enable_warnings(sh1d_common_serial)
+  set(SH1D_SERIAL_COMMON sh1d_common_serial)
+endif()
+
 add_executable(schrodinger_helmholtz src/main.cpp)
 target_link_libraries(schrodinger_helmholtz PRIVATE sh1d_common)
 sh1d_enable_warnings(schrodinger_helmholtz)
+
+add_executable(schrodinger_helmholtz_serial src/main.cpp)
+target_link_libraries(schrodinger_helmholtz_serial PRIVATE ${SH1D_SERIAL_COMMON})
+sh1d_enable_warnings(schrodinger_helmholtz_serial)
+
+add_executable(sh1d_benchmark_cpu src/benchmark.cpp)
+target_link_libraries(sh1d_benchmark_cpu PRIVATE sh1d_common)
+sh1d_enable_warnings(sh1d_benchmark_cpu)
+
+add_executable(sh1d_benchmark_cpu_serial src/benchmark.cpp)
+target_link_libraries(sh1d_benchmark_cpu_serial PRIVATE ${SH1D_SERIAL_COMMON})
+target_compile_definitions(sh1d_benchmark_cpu_serial PRIVATE SH1D_BENCHMARK_SERIAL=1)
+sh1d_enable_warnings(sh1d_benchmark_cpu_serial)
 
 include(CTest)
 if(BUILD_TESTING)

@@ -239,8 +239,8 @@ void validateParameters(const Parameters &parameters) {
         throw std::runtime_error("timeStep must be finite and positive");
     if (parameters.numberOfSteps == 0 || parameters.outputIntervalSteps == 0)
         throw std::runtime_error("numberOfSteps and outputIntervalSteps must be positive");
-    if (parameters.threadCount < 0 || parameters.threadCount > 2)
-        throw std::runtime_error("threadCount must be 0, 1, or 2");
+    if (parameters.threadCount < 0)
+        throw std::runtime_error("threadCount must be nonnegative");
     for (const auto [value, name] :
          {std::pair{parameters.dispersionCoefficient, "dispersionCoefficient"},
           std::pair{parameters.nonlinearityCoefficient, "nonlinearityCoefficient"},
