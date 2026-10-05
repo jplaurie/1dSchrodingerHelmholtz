@@ -5,6 +5,8 @@ domain: the nonlocal Schrödinger–Helmholtz equation, its long-wave limit, and
 the local cubic nonlinear Schrödinger equation. One `model` flag selects the
 equation while the numerical method and output format remain the same.
 
+Current release: `v0.2.0` (2026-10-04).
+
 The solver provides a fully dealiased pseudo-spectral nonlinear evaluation,
 ETDRK2, ETDRK4-B, and integrating-factor RK2 time stepping, reproducible
 stochastic forcing, atomic checkpoints, automatic restart, CSV diagnostics,
@@ -394,6 +396,16 @@ cross-parameter validation are separate steps, so numerical code does not
 interpret raw configuration text. The solver similarly keeps run preparation,
 restart restoration, time stepping, diagnostics, and state output behind
 focused functions.
+
+## Version history
+
+These versions were assigned retrospectively to the main development milestones;
+the dates below are the dates of the tagged commits.
+
+| Version | Date | Changes |
+| --- | --- | --- |
+| `v0.2.0` | 2026-10-04 | Refined the typed solver structure and added a reproducible serial/OpenMP benchmark harness, raw timing data, a scaling plot and additional numerical checks. |
+| `v0.1.0` | 2026-09-23 | Introduced the modern C++20 solver unifying the Schrödinger–Helmholtz, long-wave and cubic-NLS models, with validated parameters, restartable output, plotting tools and numerical/regression tests. |
 
 ## License and citation
 
