@@ -1,13 +1,13 @@
 #pragma once
 
 #include "fftw_utils.hpp"
+#include "host_stepper.hpp"
 #include "integrator.hpp"
 #include "nonlinear.hpp"
 #include "output.hpp"
 #include "parameters.hpp"
 #include "types.hpp"
 
-#include <array>
 #include <cstdint>
 #include <random>
 #include <vector>
@@ -23,7 +23,6 @@ class Solver {
     void buildIntegrationCoefficients();
     void buildForcing();
     void generateNoise();
-    void rightHandSide(const SpectralField &input, SpectralField &output);
     void step(SpectralField &wavefunction);
     RestartState prepareRun();
     void validateRunBounds(const RestartState &state) const;
@@ -38,8 +37,7 @@ class Solver {
     SpectralField linearOperator_;
     IntegrationCoefficients coefficients_;
     SpectralField noise_, deterministicForcing_;
-    std::array<SpectralField, 4> nonlinearStages_;
-    std::array<SpectralField, 3> stageStates_;
+    HostIntegrationWorkspace integrationWorkspace_;
     std::vector<double> forcingAmplitude_, stochasticNoiseScale_;
     std::vector<std::size_t> forcedIndices_;
     std::size_t forcedModeCount_ = 0;

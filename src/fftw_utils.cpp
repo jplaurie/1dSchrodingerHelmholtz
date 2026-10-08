@@ -1,6 +1,7 @@
 #include "fftw_utils.hpp"
 
 #include <algorithm>
+#include <filesystem>
 #include <stdexcept>
 
 #ifdef _OPENMP
@@ -8,6 +9,9 @@
 #endif
 
 namespace {
+unsigned planningFlags = FFTW_ESTIMATE;
+std::filesystem::path wisdomPath;
+
 #ifdef SH1D_HAVE_FFTW_THREADS
 bool threadsInitialized = false;
 #endif
@@ -18,6 +22,31 @@ fftw_complex *fftwData(SpectralField &field) {
 }
 } // namespace
 
+void configureFftw(const Parameters &parameters, bool importWisdom) {
+    switch (parameters.fftwPlanning) {
+    case FftwPlanning::estimate:
+        planningFlags = FFTW_ESTIMATE;
+        break;
+    case FftwPlanning::measure:
+        planningFlags = FFTW_MEASURE;
+        break;
+    case FftwPlanning::patient:
+        planningFlags = FFTW_PATIENT;
+        break;
+    }
+    wisdomPath = parameters.fftwWisdomFile;
+    if (importWisdom && !wisdomPath.empty() && std::filesystem::exists(wisdomPath) &&
+        !fftw_import_wisdom_from_filename(wisdomPath.c_str()))
+        throw std::runtime_error("cannot import FFTW wisdom: " + wisdomPath.string());
+}
+
+void saveFftwWisdom() {
+    if (!wisdomPath.empty() && !fftw_export_wisdom_to_filename(wisdomPath.c_str()))
+        throw std::runtime_error("cannot export FFTW wisdom: " + wisdomPath.string());
+}
+
+unsigned fftwPlanningFlags() { return planningFlags; }
+
 void FftwDeleter::operator()(fftw_plan_s *plan) const {
     if (plan)
         fftw_destroy_plan(plan);
@@ -26,9 +55,9 @@ void FftwDeleter::operator()(fftw_plan_s *plan) const {
 ComplexTransform::ComplexTransform(std::size_t count)
     : valueCount_(count), inputBuffer_(count), outputBuffer_(count) {
     forward_.reset(fftw_plan_dft_1d(static_cast<int>(valueCount_), fftwData(inputBuffer_),
-                                    fftwData(outputBuffer_), FFTW_FORWARD, FFTW_ESTIMATE));
+                                    fftwData(outputBuffer_), FFTW_FORWARD, fftwPlanningFlags()));
     inverse_.reset(fftw_plan_dft_1d(static_cast<int>(valueCount_), fftwData(inputBuffer_),
-                                    fftwData(outputBuffer_), FFTW_BACKWARD, FFTW_ESTIMATE));
+                                    fftwData(outputBuffer_), FFTW_BACKWARD, fftwPlanningFlags()));
     if (!forward_ || !inverse_)
         throw std::runtime_error("FFTW could not create transform plans");
 }

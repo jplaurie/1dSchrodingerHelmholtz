@@ -38,6 +38,9 @@ threadCount 1
 
 # Output and automatic-restart controls.
 writeModeDiagnostics true
+fieldOutputFormat text
+hdf5CompressionLevel 0
+fftwPlanning estimate
 overwriteOutput false
 dataDirectory data/quickstart
 outputDirectory output/quickstart

@@ -1,5 +1,7 @@
 #include "output.hpp"
 
+#include "hdf5_io.hpp"
+#include "io_utils.hpp"
 #include "spectral.hpp"
 
 #include <algorithm>
@@ -12,7 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
+#include <utility>
 
 namespace {
 constexpr std::array<char, 8> checkpointMagic{'S', 'H', '1', 'D', 'R', 'S', 'T', '1'};
@@ -42,38 +44,10 @@ std::uint64_t parseFrame(std::string_view text, const std::filesystem::path &pat
     return frame;
 }
 
-void closeChecked(std::ofstream &out, const std::string &message) {
-    out.close();
-    if (!out)
-        throw std::runtime_error(message);
-}
-
-std::ofstream numericOutput(const std::filesystem::path &path,
-                            std::ios::openmode mode = std::ios::out) {
-    std::ofstream out(path, mode);
-    if (!out)
-        throw std::runtime_error("cannot write output file: " + path.string());
-    out << std::setprecision(17);
-    return out;
-}
-
 std::string frameName(const std::string &prefix, std::uint64_t frame, const std::string &suffix) {
     std::ostringstream name;
     name << prefix << std::setw(8) << std::setfill('0') << frame << suffix;
     return name.str();
-}
-
-template <class Writer> void writeAtomic(const std::filesystem::path &path, Writer writer) {
-    const std::filesystem::path temporary = path.string() + ".tmp";
-    std::error_code ignored;
-    std::filesystem::remove(temporary, ignored);
-    try {
-        writer(temporary);
-        std::filesystem::rename(temporary, path);
-    } catch (...) {
-        std::filesystem::remove(temporary, ignored);
-        throw;
-    }
 }
 
 template <class T> void writeBinary(std::ostream &out, const T &value) {
@@ -108,39 +82,51 @@ SpectralField readInitialCondition(const Parameters &parameters, ComplexTransfor
     SpectralField spectral(parameters.gridPoints), physical(parameters.gridPoints);
     if (parameters.initialConditionFile.empty())
         return spectral;
-    std::ifstream input(parameters.initialConditionFile);
-    if (!input)
-        throw std::runtime_error("cannot open initial condition: " +
-                                 parameters.initialConditionFile.string());
-    std::string line;
-    std::size_t index = 0, lineNumber = 0;
-    while (std::getline(input, line)) {
-        ++lineNumber;
-        if (const auto comment = line.find('#'); comment != std::string::npos)
-            line.erase(comment);
-        std::istringstream fields(line);
-        std::vector<double> values;
-        double value = 0.0;
-        while (fields >> value)
-            values.push_back(value);
-        if (!fields.eof())
-            throw std::runtime_error("invalid numeric value on initial-condition line " +
-                                     std::to_string(lineNumber));
-        if (values.empty())
-            continue;
-        if ((values.size() != 2 && values.size() != 3) || index >= parameters.gridPoints)
+    const auto extension = parameters.initialConditionFile.extension();
+    if (extension == ".h5" || extension == ".hdf5") {
+        Hdf5Field field = readHdf5Field(parameters.initialConditionFile);
+        const double tolerance =
+            1.e-12 * std::max({1.0, std::abs(field.domainLength), parameters.domainLength});
+        if (field.gridPoints != parameters.gridPoints ||
+            std::abs(field.domainLength - parameters.domainLength) > tolerance)
             throw std::runtime_error(
-                "initial-condition rows must contain 'real imag' or 'x real imag'");
-        if (!std::all_of(values.begin(), values.end(),
-                         [](double entry) { return std::isfinite(entry); }))
-            throw std::runtime_error("initial condition contains a non-finite value on line " +
-                                     std::to_string(lineNumber));
-        const std::size_t offset = values.size() == 3 ? 1 : 0;
-        physical[index++] = Complex(values[offset], values[offset + 1]);
+                "HDF5 initial-condition grid or domain does not match the parameter file");
+        physical = std::move(field.wavefunction);
+    } else {
+        std::ifstream input(parameters.initialConditionFile);
+        if (!input)
+            throw std::runtime_error("cannot open initial condition: " +
+                                     parameters.initialConditionFile.string());
+        std::string line;
+        std::size_t index = 0, lineNumber = 0;
+        while (std::getline(input, line)) {
+            ++lineNumber;
+            if (const auto comment = line.find('#'); comment != std::string::npos)
+                line.erase(comment);
+            std::istringstream fields(line);
+            std::vector<double> values;
+            double value = 0.0;
+            while (fields >> value)
+                values.push_back(value);
+            if (!fields.eof())
+                throw std::runtime_error("invalid numeric value on initial-condition line " +
+                                         std::to_string(lineNumber));
+            if (values.empty())
+                continue;
+            if ((values.size() != 2 && values.size() != 3) || index >= parameters.gridPoints)
+                throw std::runtime_error(
+                    "initial-condition rows must contain 'real imag' or 'x real imag'");
+            if (!std::all_of(values.begin(), values.end(),
+                             [](double entry) { return std::isfinite(entry); }))
+                throw std::runtime_error("initial condition contains a non-finite value on line " +
+                                         std::to_string(lineNumber));
+            const std::size_t offset = values.size() == 3 ? 1 : 0;
+            physical[index++] = Complex(values[offset], values[offset + 1]);
+        }
+        if (index != parameters.gridPoints)
+            throw std::runtime_error("initial condition has " + std::to_string(index) +
+                                     " rows; expected " + std::to_string(parameters.gridPoints));
     }
-    if (index != parameters.gridPoints)
-        throw std::runtime_error("initial condition has " + std::to_string(index) +
-                                 " rows; expected " + std::to_string(parameters.gridPoints));
     transform.forward(physical, spectral);
     enforceStateConstraints(parameters, spectral);
     return spectral;
@@ -213,7 +199,8 @@ void writeCheckpoint(const Parameters &parameters, const RestartState &state,
 
 bool managedDataFile(const std::filesystem::path &path) {
     const auto name = path.filename().string();
-    return name == "restart_state.txt" || name.ends_with(".tmp") ||
+    return name == "restart_state.txt" || name == "output_transaction.txt" ||
+           name.ends_with(".tmp") || name.ends_with(".previous") ||
            name.starts_with("wavefunction_") || name.starts_with("checkpoint_");
 }
 
@@ -261,20 +248,6 @@ void createCsv(const std::filesystem::path &path, std::string_view header) {
     auto out = numericOutput(path);
     out << header << '\n';
     closeChecked(out, "cannot create output: " + path.string());
-}
-
-std::filesystem::path nextSegmentDirectory(const Parameters &parameters) {
-    const auto root = parameters.outputDirectory / "segments";
-    std::filesystem::create_directories(root);
-    for (std::uint64_t index = 1;; ++index) {
-        std::ostringstream name;
-        name << "segment_" << std::setw(8) << std::setfill('0') << index;
-        const auto candidate = root / name.str();
-        if (!std::filesystem::exists(candidate)) {
-            std::filesystem::create_directory(candidate);
-            return candidate;
-        }
-    }
 }
 
 } // namespace
@@ -350,55 +323,31 @@ void prepareOutput(const Parameters &parameters, bool restarting, std::uint64_t 
         createCsv(parameters.outputDirectory / "modes.csv", modesHeader);
 }
 
-void writeRunRecords(const Parameters &parameters, double startTime, std::uint64_t startFrame,
-                     const std::vector<double> &forcingAmplitude, std::size_t forcedModeCount,
-                     double waveActionInjectionCoefficient,
-                     double quadraticEnergyInjectionCoefficient) {
-    writeParameterRecord(parameters, parameters.outputDirectory, "CPU/FFTW");
-    const auto segment = nextSegmentDirectory(parameters);
-    writeParameterRecord(parameters, segment, "CPU/FFTW");
-    {
-        auto invocation = numericOutput(segment / "invocation.txt");
-        invocation << std::setprecision(17) << "startTime " << startTime << '\n'
-                   << "startFrame " << startFrame << '\n';
-        closeChecked(invocation, "failed while writing invocation record");
-    }
-    {
-        auto summary = numericOutput(parameters.outputDirectory / "forcing_summary.csv");
-        summary << "enabled,profile,forced_modes,wave_action_injection_coefficient,"
-                   "quadratic_energy_injection_coefficient\n"
-                << std::boolalpha << parameters.forcingEnabled << ','
-                << forcingProfileName(parameters.forcingProfile) << ',' << forcedModeCount << ','
-                << std::setprecision(17) << waveActionInjectionCoefficient << ','
-                << quadraticEnergyInjectionCoefficient << '\n';
-        closeChecked(summary, "failed while writing forcing_summary.csv");
-    }
-    {
-        auto spectrum = numericOutput(parameters.outputDirectory / "forcing_spectrum.csv");
-        spectrum << "mode,wavenumber,amplitude\n" << std::setprecision(17);
-        for (std::size_t i = 0; i < forcingAmplitude.size(); ++i)
-            spectrum << signedWave(i, parameters.gridPoints) << ',' << waveNumber(parameters, i)
-                     << ',' << forcingAmplitude[i] << '\n';
-        closeChecked(spectrum, "failed while writing forcing_spectrum.csv");
-    }
-}
-
 void writeWavefunctionAndRestart(const Parameters &parameters, ComplexTransform &baseTransform,
                                  const RestartState &state, const std::string &randomEngineState,
                                  const std::string &normalDistributionState) {
     SpectralField physical;
     baseTransform.inverse(state.wavefunction, physical);
-    const auto wavePath =
-        parameters.dataDirectory / frameName("wavefunction_", state.frame, ".dat");
-    writeAtomic(wavePath, [&](const std::filesystem::path &temporary) {
-        auto out = numericOutput(temporary);
-        out << "# x real imaginary\n" << std::setprecision(17);
-        const double dx = parameters.domainLength / static_cast<double>(parameters.gridPoints);
-        for (std::size_t i = 0; i < physical.size(); ++i)
-            out << dx * static_cast<double>(i) << ' ' << physical[i].real() << ' '
-                << physical[i].imag() << '\n';
-        closeChecked(out, "failed while writing wavefunction: " + wavePath.string());
-    });
+    if (parameters.fieldOutputFormat != FieldOutputFormat::hdf5) {
+        const auto wavePath =
+            parameters.dataDirectory / frameName("wavefunction_", state.frame, ".dat");
+        writeAtomic(wavePath, [&](const std::filesystem::path &temporary) {
+            auto out = numericOutput(temporary);
+            out << "# x real imaginary\n" << std::setprecision(17);
+            const double dx = parameters.domainLength / static_cast<double>(parameters.gridPoints);
+            for (std::size_t i = 0; i < physical.size(); ++i)
+                out << dx * static_cast<double>(i) << ' ' << physical[i].real() << ' '
+                    << physical[i].imag() << '\n';
+            closeChecked(out, "failed while writing wavefunction: " + wavePath.string());
+        });
+    }
+    if (parameters.fieldOutputFormat != FieldOutputFormat::text) {
+        const auto hdf5Path =
+            parameters.dataDirectory / frameName("wavefunction_", state.frame, ".h5");
+        writeAtomic(hdf5Path, [&](const std::filesystem::path &temporary) {
+            writeHdf5Field(temporary, parameters, state.time, state.frame, physical);
+        });
+    }
 
     const auto checkpointName = frameName("checkpoint_", state.frame, ".bin");
     writeCheckpoint(parameters, state, randomEngineState, normalDistributionState,

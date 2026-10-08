@@ -30,6 +30,9 @@ randomSeed 123456
 
 threadCount 1
 writeModeDiagnostics true
+fieldOutputFormat text
+hdf5CompressionLevel 0
+fftwPlanning estimate
 overwriteOutput false
 dataDirectory data/nonlinear-schrodinger
 outputDirectory output/nonlinear-schrodinger

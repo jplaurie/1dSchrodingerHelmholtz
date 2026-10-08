@@ -29,6 +29,9 @@ struct DiagnosticsAverages {
 
 RestartState readRestartOrInitial(const Parameters &parameters, ComplexTransform &baseTransform);
 void prepareOutput(const Parameters &parameters, bool restarting, std::uint64_t committedFrame);
+bool recoverOutputTransaction(const Parameters &parameters);
+void beginOutputTransaction(const Parameters &parameters, std::uint64_t frame);
+void finishOutputTransaction(const Parameters &parameters);
 void writeRunRecords(const Parameters &parameters, double startTime, std::uint64_t startFrame,
                      const std::vector<double> &forcingAmplitude, std::size_t forcedModeCount,
                      double waveActionInjectionCoefficient,

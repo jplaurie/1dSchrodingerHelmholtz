@@ -9,16 +9,16 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 
-FRAME_PATTERN = re.compile(r"wavefunction_(\d{8})\.dat$")
+FRAME_PATTERN = re.compile(r"wavefunction_(\d{8})\.(?:dat|h5)$")
 
 
 def available_frames(data_directory: str | Path) -> list[int]:
     """Return sorted frame numbers found in a solver data directory."""
-    frames: list[int] = []
-    for path in Path(data_directory).glob("wavefunction_*.dat"):
+    frames: set[int] = set()
+    for path in Path(data_directory).glob("wavefunction_*"):
         match = FRAME_PATTERN.match(path.name)
         if match:
-            frames.append(int(match.group(1)))
+            frames.add(int(match.group(1)))
     return sorted(frames)
 
 
@@ -26,11 +26,31 @@ def load_wavefunction(
     data_directory: str | Path, frame: int
 ) -> tuple[np.ndarray, np.ndarray]:
     """Load x and complex psi arrays for one frame."""
-    path = Path(data_directory) / f"wavefunction_{frame:08d}.dat"
-    values = np.loadtxt(path)
-    if values.ndim != 2 or values.shape[1] != 3:
-        raise ValueError(f"unexpected wavefunction format: {path}")
-    return values[:, 0], values[:, 1] + 1j * values[:, 2]
+    directory = Path(data_directory)
+    text_path = directory / f"wavefunction_{frame:08d}.dat"
+    if text_path.exists():
+        values = np.loadtxt(text_path)
+        if values.ndim != 2 or values.shape[1] != 3:
+            raise ValueError(f"unexpected wavefunction format: {text_path}")
+        return values[:, 0], values[:, 1] + 1j * values[:, 2]
+
+    hdf5_path = directory / f"wavefunction_{frame:08d}.h5"
+    if not hdf5_path.exists():
+        raise FileNotFoundError(f"wavefunction frame {frame} was not found in {directory}")
+    try:
+        import h5py
+    except ImportError as error:
+        raise ImportError("h5py is required to read HDF5 wavefunction files") from error
+    with h5py.File(hdf5_path, "r") as handle:
+        if handle.attrs.get("format", "") != "sh1d_wavefunction_v1":
+            raise ValueError(f"unsupported HDF5 wavefunction format: {hdf5_path}")
+        values = np.asarray(handle["wavefunction"], dtype=float)
+        count = int(handle.attrs["grid_points"])
+        length = float(handle.attrs["domain_length"])
+    if values.shape != (count, 2):
+        raise ValueError(f"unexpected HDF5 wavefunction shape: {hdf5_path}")
+    x = length * np.arange(count, dtype=float) / count
+    return x, values[:, 0] + 1j * values[:, 1]
 
 
 def load_csv(path: str | Path) -> dict[str, np.ndarray]:
@@ -107,4 +127,3 @@ def plot_diagnostics(output_directory: str | Path, axes=None):
     axes[1].set_ylabel("wave action")
     axes[1].set_xlabel("time")
     return axes
-

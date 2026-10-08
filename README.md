@@ -5,7 +5,7 @@ domain: the nonlocal Schrödinger–Helmholtz equation, its long-wave limit, and
 the local cubic nonlinear Schrödinger equation. One `model` flag selects the
 equation while the numerical method and output format remain the same.
 
-Current release: `v0.2.0` (2026-10-04).
+Current release: `v0.3.0` (2026-10-08).
 
 The solver provides a fully dealiased pseudo-spectral nonlinear evaluation,
 ETDRK2, ETDRK4-B, and integrating-factor RK2 time stepping, reproducible
@@ -209,10 +209,12 @@ transform. Fourier coefficients use the normalization
 - CMake 3.20 or newer
 - A C++20 compiler
 - FFTW3 development headers and library
+- HDF5 development headers and library for optional HDF5 snapshots
 - Python 3 for the end-to-end regression test
-- NumPy and Matplotlib for the analysis scripts
+- NumPy and Matplotlib for the analysis scripts; `h5py` for HDF5 plotting
 
-OpenMP and FFTW's threads library are optional.
+OpenMP, FFTW's threads library, and HDF5 are optional. If HDF5 is unavailable,
+the default text-only build and existing parameter files continue to work.
 
 ## Build and test
 
@@ -230,6 +232,7 @@ make test
 ```
 
 Use `-DSH1D_OPENMP=OFF` for a strictly serial build.
+Use `-DSH1D_HDF5=OFF` to disable HDF5 discovery explicitly.
 
 ## Performance benchmark
 
@@ -317,6 +320,10 @@ Unknown keys, invalid values, and extra fields stop the run.
 | `initialConditionFile` | Optional `real imag` or `x real imag` physical field |
 | `threadCount` | FFTW/OpenMP threads; zero chooses automatically and is capped at two |
 | `writeModeDiagnostics` | Write every complex Fourier mode to `modes.csv` |
+| `fieldOutputFormat` | Physical snapshots: `text` (default), `hdf5`, or `both` |
+| `hdf5CompressionLevel` | Deflate level from 0 (off) through 9 |
+| `fftwPlanning` | FFTW planner: `estimate` (default), `measure`, or `patient` |
+| `fftwWisdomFile` | Optional FFTW wisdom file to import and update |
 | `overwriteOutput` | Replace managed output from an existing non-restart run |
 | `dataDirectory`, `outputDirectory` | State and diagnostic locations |
 
@@ -326,6 +333,11 @@ time step, and both random-generator states are stored in every checkpoint.
 `singleMode` is deterministic and acts at both signs of the selected physical
 wavenumber.
 
+`measure` and `patient` planning spend more time during startup to search for
+faster FFT implementations. Setting `fftwWisdomFile` persists those plans;
+subsequent invocations import the file before creating any transforms and
+update it after a successful run.
+
 ## Output and restart
 
 Every fresh run saves frame zero, followed by the requested cadence and final
@@ -333,7 +345,8 @@ step. Output frames are numbered with eight digits.
 
 | Location | Contents |
 | --- | --- |
-| `dataDirectory/wavefunction_NNNNNNNN.dat` | `x real imaginary` physical field |
+| `dataDirectory/wavefunction_NNNNNNNN.dat` | `x real imaginary` physical field, written in 17-digit scientific notation |
+| `dataDirectory/wavefunction_NNNNNNNN.h5` | Optional self-describing HDF5 physical field |
 | `dataDirectory/checkpoint_NNNNNNNN.bin` | Spectral state, time, frame, and random-generator state |
 | `dataDirectory/restart_state.txt` | Latest committed checkpoint |
 | `outputDirectory/diagnostics.csv` | Wave action, energy components, and dissipation rates |
@@ -343,11 +356,21 @@ step. Output frames are numbered with eight digits.
 | `outputDirectory/forcing_*.csv` | Resolved forcing profile and injection coefficients |
 | `outputDirectory/segments/` | Per-invocation resolved parameters and start state |
 
-Snapshots, checkpoints, and restart-state files are written through temporary
-files and renamed atomically. On restart, CSV rows beyond the last committed
-frame are removed before output resumes. A detected restart always takes
-precedence over `initialConditionFile`; use new output directories for an
-independent run.
+Floating-point values in text and CSV data use scientific notation.
+
+Each output frame is protected by a transaction journal covering its CSV rows,
+physical snapshot, checkpoint, and restart metadata. An interrupted frame is
+rolled back automatically on the next invocation; fully committed frames are
+retained. A detected restart always takes precedence over
+`initialConditionFile`; use new output directories for an independent run.
+
+HDF5 files can also be used as `initialConditionFile` values. When HDF5 support
+is enabled, convert a snapshot back to the established text layout with:
+
+```bash
+./build/release/sh1d_hdf5_export input.h5 output.dat
+./build/release/sh1d_hdf5_export input.h5 output.dat --format gnuplot
+```
 
 ## Plotting and movies
 
@@ -378,11 +401,14 @@ src/
   parameters.cpp/.hpp         parse, assign, validate, and record settings
   spectral.cpp/.hpp           Fourier indexing and spectral constraints
   fftw_utils.cpp/.hpp         reusable complex FFTW transforms
+  host_stepper.hpp            backend-independent host integration stages
+  hdf5_io.cpp/.hpp            optional self-describing field snapshots
   nonlinear.cpp/.hpp          dealiased nonlinear and density operators
   integrator.hpp              shared ETD and integrating-factor formulas
   solver.cpp/.hpp             forcing, integration, and run orchestration
   diagnostics.cpp             invariants, spectra, fluxes, and mode output
-  output.cpp/.hpp             snapshots, checkpoints, and restart recovery
+  output.cpp/.hpp             snapshots, checkpoints, and restart parsing
+  output_transaction.cpp      atomic multi-file frame and run records
 examples/                     small reproducible parameter files
 benchmarks/                   runner, raw timings, metadata, and scaling plot
 tests/                        numerical, parameter, and restart regressions
@@ -404,6 +430,7 @@ the dates below are the dates of the tagged commits.
 
 | Version | Date | Changes |
 | --- | --- | --- |
+| `v0.3.0` | 2026-10-08 | Added CI and provenance records, temporal-convergence and recovery tests, FFTW planning/wisdom, optional HDF5 I/O, transactional frames, and a separated host time stepper. |
 | `v0.2.0` | 2026-10-04 | Refined the typed solver structure and added a reproducible serial/OpenMP benchmark harness, raw timing data, a scaling plot and additional numerical checks. |
 | `v0.1.0` | 2026-09-23 | Introduced the modern C++20 solver unifying the Schrödinger–Helmholtz, long-wave and cubic-NLS models, with validated parameters, restartable output, plotting tools and numerical/regression tests. |
 

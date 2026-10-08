@@ -1,5 +1,6 @@
 #include "output.hpp"
 
+#include "io_utils.hpp"
 #include "spectral.hpp"
 
 #include <algorithm>
@@ -14,20 +15,13 @@ bool finiteValues(const std::vector<double> &values) {
                        [](double value) { return std::isfinite(value); });
 }
 
-std::ofstream numericOutput(const std::filesystem::path &path,
-                            std::ios::openmode mode = std::ios::out) {
-    std::ofstream output(path, mode);
-    if (!output)
-        throw std::runtime_error("cannot open output file: " + path.string());
-    output << std::scientific;
+std::ofstream scientificOutput(const std::filesystem::path &path,
+                               std::ios::openmode mode = std::ios::out) {
+    auto output = numericOutput(path, mode);
+    output << std::scientific << std::setprecision(6);
     return output;
 }
 
-void closeChecked(std::ofstream &output, const std::string &message) {
-    output.close();
-    if (!output)
-        throw std::runtime_error(message);
-}
 } // namespace
 
 double appendDiagnostics(const Parameters &parameters, NonlinearOperator &nonlinearOperator,
@@ -127,7 +121,7 @@ double appendDiagnostics(const Parameters &parameters, NonlinearOperator &nonlin
         !finiteValues(averages.waveFlux) || !finiteValues(averages.energyFlux))
         throw std::runtime_error("diagnostics contain a non-finite value");
     {
-        auto out = numericOutput(parameters.outputDirectory / "diagnostics.csv", std::ios::app);
+        auto out = scientificOutput(parameters.outputDirectory / "diagnostics.csv", std::ios::app);
         out << std::setprecision(17) << time << ',' << frame << ',' << waveAction << ','
             << linearEnergy << ',' << chemicalEnergy << ',' << nonlinearEnergy << ',' << totalEnergy
             << ',' << waveHypo << ',' << waveHyper << ',' << energyHypo << ',' << energyHyper
@@ -135,7 +129,7 @@ double appendDiagnostics(const Parameters &parameters, NonlinearOperator &nonlin
         closeChecked(out, "failed while writing diagnostics.csv");
     }
     {
-        auto out = numericOutput(parameters.outputDirectory / "spectra.csv", std::ios::app);
+        auto out = scientificOutput(parameters.outputDirectory / "spectra.csv", std::ios::app);
         const double dk = 2.0 * sh1dPi / parameters.domainLength;
         for (std::size_t i = 0; i < bins; ++i)
             out << time << ',' << frame << ',' << dk * static_cast<double>(i) << ',' << spectrum[i]
@@ -144,7 +138,7 @@ double appendDiagnostics(const Parameters &parameters, NonlinearOperator &nonlin
         closeChecked(out, "failed while writing spectra.csv");
     }
     {
-        auto out = numericOutput(parameters.outputDirectory / "fluxes.csv", std::ios::app);
+        auto out = scientificOutput(parameters.outputDirectory / "fluxes.csv", std::ios::app);
         const double dk = 2.0 * sh1dPi / parameters.domainLength;
         for (std::size_t i = 0; i < bins; ++i)
             out << time << ',' << frame << ',' << dk * static_cast<double>(i) << ','
@@ -154,7 +148,7 @@ double appendDiagnostics(const Parameters &parameters, NonlinearOperator &nonlin
         closeChecked(out, "failed while writing fluxes.csv");
     }
     if (parameters.writeModeDiagnostics) {
-        auto out = numericOutput(parameters.outputDirectory / "modes.csv", std::ios::app);
+        auto out = scientificOutput(parameters.outputDirectory / "modes.csv", std::ios::app);
         for (std::size_t i = 0; i < parameters.gridPoints; ++i)
             out << time << ',' << frame << ',' << signedWave(i, parameters.gridPoints) << ','
                 << waveNumber(parameters, i) << ',' << wavefunction[i].real() << ','

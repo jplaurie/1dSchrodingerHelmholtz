@@ -15,10 +15,12 @@ int main(int argc, char **argv) {
         const std::filesystem::path parameterFile = argc == 2 ? argv[1] : "params.txt";
         Parameters parameters = readParameters(parameterFile);
         initializeFftwThreads(parameters.threadCount);
+        configureFftw(parameters);
         {
             Solver solver(std::move(parameters));
             solver.run();
         }
+        saveFftwWisdom();
         finalizeFftwThreads();
         return 0;
     } catch (const std::exception &error) {

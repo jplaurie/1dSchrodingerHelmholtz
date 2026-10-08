@@ -29,5 +29,8 @@ class ComplexTransform {
     FftwPlan forward_, inverse_;
 };
 
+void configureFftw(const Parameters &parameters, bool importWisdom = true);
+void saveFftwWisdom();
+[[nodiscard]] unsigned fftwPlanningFlags();
 void initializeFftwThreads(int threadCount);
 void finalizeFftwThreads();

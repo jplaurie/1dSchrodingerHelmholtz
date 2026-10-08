@@ -80,13 +80,10 @@ Solver::Solver(Parameters parameters)
                                 ? std::vector<double>(parameters_.gridPoints)
                                 : std::vector<double>{}),
       random_(parameters_.randomSeed = resolveRandomSeed(parameters_.randomSeed)) {
-    const std::size_t stages = parameters_.integrator == Integrator::etd4 ? 4 : 2;
-    for (std::size_t i = 0; i < stages; ++i)
-        nonlinearStages_[i] = makeSpectralField(parameters_.gridPoints);
-    for (std::size_t i = 1; i < stages; ++i)
-        stageStates_[i - 1] = makeSpectralField(parameters_.gridPoints);
+    integrationWorkspace_.initialize(parameters_.gridPoints, parameters_.nonlinearStageCount());
     buildLinearOperator();
     buildIntegrationCoefficients();
+    SpectralField{}.swap(linearOperator_);
     if (parameters_.forcingEnabled)
         buildForcing();
 }
@@ -135,7 +132,7 @@ void Solver::buildIntegrationCoefficients() {
 
     auto &coefficients = coefficients_;
     coefficients.e1 = makeSpectralField(parameters_.gridPoints);
-    if (parameters_.integrator != Integrator::integratingFactorRk2) {
+    if (parameters_.usesEtd()) {
         coefficients.q1 = makeSpectralField(parameters_.gridPoints);
         coefficients.f1 = makeSpectralField(parameters_.gridPoints);
     }
@@ -233,55 +230,18 @@ void Solver::generateNoise() {
                     Complex(normal_(random_), normal_(random_));
 }
 
-void Solver::rightHandSide(const SpectralField &input, SpectralField &output) {
-    nonlinearOperator_.evaluate(input, output);
-    if (parameters_.usesDeterministicForcing())
-        for (std::size_t i = 0; i < output.size(); ++i)
-            output[i] += deterministicForcing_[i];
-}
-
 void Solver::step(SpectralField &wavefunction) {
-    const bool stochastic = parameters_.usesStochasticForcing();
-    if (stochastic)
+    if (!noise_.empty())
         generateNoise();
-
-    SpectralField &stageA = stageStates_[0];
-    SpectralField &stageB = stageStates_[1];
-    SpectralField &stageC = stageStates_[2];
-    SpectralField &nonlinear1 = nonlinearStages_[0];
-    SpectralField &nonlinear2 = nonlinearStages_[1];
-    SpectralField &nonlinear3 = nonlinearStages_[2];
-    SpectralField &nonlinear4 = nonlinearStages_[3];
-
-    rightHandSide(wavefunction, nonlinear1);
-    for (std::size_t i = 0; i < wavefunction.size(); ++i)
-        stageA[i] = integrationStageA(parameters_.integrator, parameters_.timeStep, i,
-                                      coefficients_, wavefunction[i], nonlinear1[i]);
-    rightHandSide(stageA, nonlinear2);
-    if (parameters_.integrator == Integrator::etd4) {
-        for (std::size_t i = 0; i < wavefunction.size(); ++i)
-            stageB[i] =
-                integrationStageB(i, coefficients_, wavefunction[i], nonlinear1[i], nonlinear2[i]);
-        rightHandSide(stageB, nonlinear3);
-        for (std::size_t i = 0; i < wavefunction.size(); ++i)
-            stageC[i] =
-                integrationStageC(i, coefficients_, wavefunction[i], nonlinear1[i], nonlinear3[i]);
-        rightHandSide(stageC, nonlinear4);
-    }
-    for (std::size_t i = 0; i < wavefunction.size(); ++i) {
-        const IntegrationFinishValues values{
-            .initial = wavefunction[i],
-            .stageA = stageA[i],
-            .nonlinear1 = nonlinear1[i],
-            .nonlinear2 = nonlinear2[i],
-            .nonlinear3 = parameters_.integrator == Integrator::etd4 ? nonlinear3[i] : Complex{},
-            .nonlinear4 = parameters_.integrator == Integrator::etd4 ? nonlinear4[i] : Complex{}};
-        wavefunction[i] = integrationFinish(parameters_.integrator, parameters_.timeStep, i,
-                                            coefficients_, values);
-        if (stochastic)
-            wavefunction[i] += noise_[i];
-    }
-    enforceStateConstraints(parameters_, wavefunction);
+    const auto rightHandSide = [&](const SpectralField &input, SpectralField &output) {
+        nonlinearOperator_.evaluate(input, output);
+        if (!deterministicForcing_.empty())
+            for (std::size_t i = 0; i < output.size(); ++i)
+                output[i] += deterministicForcing_[i];
+    };
+    advanceHostTimeStep(parameters_, coefficients_, wavefunction, noise_, integrationWorkspace_,
+                        rightHandSide,
+                        [&](SpectralField &state) { enforceStateConstraints(parameters_, state); });
     requireFinite(wavefunction, "wavefunction");
 }
 
@@ -329,14 +289,20 @@ void Solver::restoreRandomState(RestartState &state) {
 RestartState Solver::prepareRun() {
     std::filesystem::create_directories(parameters_.dataDirectory);
     std::filesystem::create_directories(parameters_.outputDirectory);
+    const bool recoveredFresh = recoverOutputTransaction(parameters_);
     RestartState state = readRestartOrInitial(parameters_, baseTransform_);
     validateRunBounds(state);
     restoreRandomState(state);
-    prepareOutput(parameters_, state.restarting, state.frame);
-    writeRunRecords(parameters_, state.time, state.frame, forcingAmplitude_, forcedModeCount_,
-                    waveActionInjectionCoefficient_, quadraticEnergyInjectionCoefficient_);
-    if (!state.restarting)
+    if (!recoveredFresh) {
+        prepareOutput(parameters_, state.restarting, state.frame);
+        writeRunRecords(parameters_, state.time, state.frame, forcingAmplitude_, forcedModeCount_,
+                        waveActionInjectionCoefficient_, quadraticEnergyInjectionCoefficient_);
+    }
+    if (!state.restarting) {
+        beginOutputTransaction(parameters_, state.frame);
         writeState(state);
+        finishOutputTransaction(parameters_);
+    }
 
     std::cout << "backend = CPU/FFTW\nmodel = " << modelName(parameters_.model)
               << "\ngridPoints = " << parameters_.gridPoints
@@ -372,9 +338,11 @@ double Solver::benchmark(std::uint64_t warmupSteps, std::uint64_t measuredSteps)
 }
 
 double Solver::writeOutputFrame(const RestartState &state, DiagnosticsAverages &averages) {
+    beginOutputTransaction(parameters_, state.frame);
     const double energy = appendDiagnostics(parameters_, nonlinearOperator_, state.time,
                                             state.frame, state.wavefunction, averages);
     writeState(state);
+    finishOutputTransaction(parameters_);
     return energy;
 }
 

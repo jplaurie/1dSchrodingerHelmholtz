@@ -1,4 +1,6 @@
 #include "parameters.hpp"
+#include "hdf5_io.hpp"
+#include "io_utils.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -10,6 +12,16 @@
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
+
+#ifndef SH1D_VERSION
+#define SH1D_VERSION "unknown"
+#endif
+#ifndef SH1D_GIT_COMMIT
+#define SH1D_GIT_COMMIT "unknown"
+#endif
+#ifndef SH1D_GIT_DIRTY
+#define SH1D_GIT_DIRTY "unknown"
+#endif
 
 namespace {
 bool parseBool(const std::string &text, const std::string &key) {
@@ -92,6 +104,26 @@ ForcingProfile parseForcingProfile(const std::string &text) {
                              "singleMode");
 }
 
+FftwPlanning parseFftwPlanning(const std::string &text) {
+    if (text == "estimate")
+        return FftwPlanning::estimate;
+    if (text == "measure")
+        return FftwPlanning::measure;
+    if (text == "patient")
+        return FftwPlanning::patient;
+    throw std::runtime_error("fftwPlanning must be estimate, measure, or patient");
+}
+
+FieldOutputFormat parseFieldOutputFormat(const std::string &text) {
+    if (text == "text")
+        return FieldOutputFormat::text;
+    if (text == "hdf5")
+        return FieldOutputFormat::hdf5;
+    if (text == "both")
+        return FieldOutputFormat::both;
+    throw std::runtime_error("fieldOutputFormat must be text, hdf5, or both");
+}
+
 struct ParameterSetting {
     std::string key;
     std::string value;
@@ -144,11 +176,13 @@ void applyParameter(const ParameterSetting &setting, Parameters &parameters) {
         {"writeModeDiagnostics", &Parameters::writeModeDiagnostics},
         {"overwriteOutput", &Parameters::overwriteOutput}};
     static constexpr std::pair<std::string_view, int Parameters::*> integers[]{
-        {"threadCount", &Parameters::threadCount}};
+        {"threadCount", &Parameters::threadCount},
+        {"hdf5CompressionLevel", &Parameters::hdf5CompressionLevel}};
     static constexpr std::pair<std::string_view, std::filesystem::path Parameters::*> paths[]{
         {"initialConditionFile", &Parameters::initialConditionFile},
         {"dataDirectory", &Parameters::dataDirectory},
-        {"outputDirectory", &Parameters::outputDirectory}};
+        {"outputDirectory", &Parameters::outputDirectory},
+        {"fftwWisdomFile", &Parameters::fftwWisdomFile}};
 
     const std::string &key = setting.key;
     const std::string &value = setting.value;
@@ -163,6 +197,10 @@ void applyParameter(const ParameterSetting &setting, Parameters &parameters) {
         parameters.integrator = parseIntegrator(value);
     else if (key == "forcingProfile")
         parameters.forcingProfile = parseForcingProfile(value);
+    else if (key == "fftwPlanning")
+        parameters.fftwPlanning = parseFftwPlanning(value);
+    else if (key == "fieldOutputFormat")
+        parameters.fieldOutputFormat = parseFieldOutputFormat(value);
     else if (!recognized)
         throw std::runtime_error("unknown parameter key on line " +
                                  std::to_string(setting.lineNumber) + ": " + key);
@@ -211,6 +249,30 @@ const char *forcingProfileName(ForcingProfile profile) {
     throw std::logic_error("unknown forcing profile");
 }
 
+const char *fftwPlanningName(FftwPlanning planning) {
+    switch (planning) {
+    case FftwPlanning::estimate:
+        return "estimate";
+    case FftwPlanning::measure:
+        return "measure";
+    case FftwPlanning::patient:
+        return "patient";
+    }
+    throw std::logic_error("unknown FFTW planning mode");
+}
+
+const char *fieldOutputFormatName(FieldOutputFormat format) {
+    switch (format) {
+    case FieldOutputFormat::text:
+        return "text";
+    case FieldOutputFormat::hdf5:
+        return "hdf5";
+    case FieldOutputFormat::both:
+        return "both";
+    }
+    throw std::logic_error("unknown field output format");
+}
+
 Parameters readParameters(const std::filesystem::path &path) {
     std::ifstream input(path);
     if (!input)
@@ -241,6 +303,11 @@ void validateParameters(const Parameters &parameters) {
         throw std::runtime_error("numberOfSteps and outputIntervalSteps must be positive");
     if (parameters.threadCount < 0)
         throw std::runtime_error("threadCount must be nonnegative");
+    if (parameters.hdf5CompressionLevel < 0 || parameters.hdf5CompressionLevel > 9)
+        throw std::runtime_error("hdf5CompressionLevel must be between 0 and 9");
+    if (parameters.fieldOutputFormat != FieldOutputFormat::text && !hdf5Available())
+        throw std::runtime_error(
+            "fieldOutputFormat requests HDF5, but this build has no HDF5 support");
     for (const auto [value, name] :
          {std::pair{parameters.dispersionCoefficient, "dispersionCoefficient"},
           std::pair{parameters.nonlinearityCoefficient, "nonlinearityCoefficient"},
@@ -284,6 +351,12 @@ void validateParameters(const Parameters &parameters) {
         !std::filesystem::exists(parameters.initialConditionFile))
         throw std::runtime_error("initialConditionFile does not exist: " +
                                  parameters.initialConditionFile.string());
+    if (!parameters.initialConditionFile.empty() &&
+        (parameters.initialConditionFile.extension() == ".h5" ||
+         parameters.initialConditionFile.extension() == ".hdf5") &&
+        !hdf5Available())
+        throw std::runtime_error("HDF5 initial condition requested, but this build has no HDF5 "
+                                 "support");
     if (parameters.dataDirectory.empty() || parameters.outputDirectory.empty())
         throw std::runtime_error("output directories cannot be empty");
     const auto normalizedData =
@@ -302,7 +375,10 @@ void writeParameterRecord(const Parameters &parameters, const std::filesystem::p
     std::ofstream out(path);
     if (!out)
         throw std::runtime_error("cannot write parameter record: " + path.string());
-    out << std::boolalpha << std::setprecision(17) << "backend " << backend << '\n'
+    out << std::boolalpha << std::setprecision(17) << "solverVersion " << SH1D_VERSION << '\n'
+        << "gitCommit " << SH1D_GIT_COMMIT << '\n'
+        << "gitDirty " << SH1D_GIT_DIRTY << '\n'
+        << "backend " << backend << '\n'
         << "model " << modelName(parameters.model) << '\n'
         << "gridPoints " << parameters.gridPoints << '\n'
         << "domainLength " << parameters.domainLength << '\n'
@@ -328,12 +404,14 @@ void writeParameterRecord(const Parameters &parameters, const std::filesystem::p
         << "targetWaveActionInjectionRate " << parameters.targetWaveActionInjectionRate << '\n'
         << "randomSeed " << parameters.randomSeed << '\n'
         << "writeModeDiagnostics " << parameters.writeModeDiagnostics << '\n'
+        << "fieldOutputFormat " << fieldOutputFormatName(parameters.fieldOutputFormat) << '\n'
+        << "hdf5CompressionLevel " << parameters.hdf5CompressionLevel << '\n'
+        << "fftwPlanning " << fftwPlanningName(parameters.fftwPlanning) << '\n'
+        << "fftwWisdomFile " << std::quoted(parameters.fftwWisdomFile.string()) << '\n'
         << "threadCount " << parameters.threadCount << '\n'
         << "overwriteOutput " << parameters.overwriteOutput << '\n'
         << "initialConditionFile " << parameters.initialConditionFile.string() << '\n'
         << "dataDirectory " << parameters.dataDirectory.string() << '\n'
         << "outputDirectory " << parameters.outputDirectory.string() << '\n';
-    out.close();
-    if (!out)
-        throw std::runtime_error("failed while writing parameter record: " + path.string());
+    closeChecked(out, "failed while writing parameter record: " + path.string());
 }

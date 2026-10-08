@@ -51,11 +51,13 @@ int main(int argc, char **argv) {
         validateParameters(parameters);
 
         initializeFftwThreads(parameters.threadCount);
+        configureFftw(parameters);
         double elapsed = 0.0;
         {
             Solver solver(parameters);
             elapsed = solver.benchmark(warmupSteps, measuredSteps);
         }
+        saveFftwWisdom();
         finalizeFftwThreads();
 #ifdef SH1D_BENCHMARK_SERIAL
         constexpr const char *backend = "CPU serial";

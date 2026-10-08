@@ -83,6 +83,18 @@ threadCount 1
 # modes.csv large, so it is disabled for production runs by default.
 writeModeDiagnostics false
 
+# Physical snapshots default to the established text format. Choose hdf5 for
+# compact self-describing output or both while migrating existing workflows.
+# Compression is an HDF5 deflate level from 0 (off) through 9.
+fieldOutputFormat text
+hdf5CompressionLevel 0
+
+# FFTW planning modes are estimate, measure, and patient. The latter two take
+# longer at startup but can improve repeated-transform performance. An optional
+# wisdom file persists the selected plans between runs.
+fftwPlanning estimate
+# fftwWisdomFile sh1d.fftw-wisdom
+
 # A restart_state.txt in dataDirectory always resumes that run. For a fresh
 # run, existing managed output is protected unless overwriteOutput is true.
 # To start from a physical field, uncomment the next line. Each row may be

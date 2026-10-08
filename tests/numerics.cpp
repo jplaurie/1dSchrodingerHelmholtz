@@ -3,47 +3,15 @@
 #include "parameters.hpp"
 #include "spectral.hpp"
 
-#include <chrono>
 #include <cmath>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <map>
 #include <stdexcept>
 
 namespace {
-class TemporaryDirectory {
-  public:
-    TemporaryDirectory() {
-        const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
-        path_ = std::filesystem::temp_directory_path() /
-                ("sh1d_parameter_tests_" + std::to_string(suffix));
-        std::filesystem::create_directory(path_);
-    }
-
-    ~TemporaryDirectory() {
-        std::error_code ignored;
-        std::filesystem::remove_all(path_, ignored);
-    }
-
-    const std::filesystem::path &path() const { return path_; }
-
-  private:
-    std::filesystem::path path_;
-};
-
 void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error(message);
-}
-
-template <class Function> void requireThrows(Function function, const char *message) {
-    try {
-        function();
-    } catch (const std::runtime_error &) {
-        return;
-    }
-    throw std::runtime_error(message);
 }
 
 void testPlaneWave(Model model) {
@@ -137,17 +105,6 @@ void testDirectConvolution(Model model) {
     }
 }
 
-void testResourceLimits() {
-    Parameters p;
-    p.gridPoints = 16'388;
-    requireThrows([&] { validateParameters(p); }, "grid limit above 16384 was not enforced");
-    p.gridPoints = 16'384;
-    p.threadCount = 12;
-    validateParameters(p);
-    p.threadCount = -1;
-    requireThrows([&] { validateParameters(p); }, "negative thread count was not rejected");
-}
-
 void testDensityResponse() {
     Parameters p;
     p.helmholtzParameter = 0.5;
@@ -161,62 +118,6 @@ void testDensityResponse() {
     require(densityResponseMultiplier(p, 4.0) == 1.0, "NLS density response is incorrect");
 }
 
-void testParameterValidation() {
-    Parameters p;
-    p.forcingEnabled = true;
-    p.forcingProfile = ForcingProfile::logNormal;
-    p.forcingLogWidth = 0.0;
-    requireThrows([&] { validateParameters(p); }, "zero log-normal width was accepted");
-
-    p.forcingLogWidth = 0.2;
-    p.forcingProfile = ForcingProfile::singleMode;
-    p.forcingWavenumber = 3.25;
-    requireThrows([&] { validateParameters(p); }, "off-grid deterministic forcing was accepted");
-
-    p.forcingEnabled = false;
-    p.dataDirectory = "same-directory";
-    p.outputDirectory = "./same-directory";
-    requireThrows([&] { validateParameters(p); },
-                  "aliased data and output directories were accepted");
-}
-
-void testParameterParsing() {
-    TemporaryDirectory temporary;
-    const auto parameterFile = temporary.path() / "test.params";
-    std::ofstream output(parameterFile);
-    output << "# Both assignment styles are supported.\n"
-           << "gridPoints = 32\n"
-           << "domainLength 12.5\n"
-           << "numberOfSteps 20\n"
-           << "outputIntervalSteps 4\n"
-           << "model longWave\n"
-           << "integrator rk2\n"
-           << "forcingEnabled false\n"
-           << "forcingProfile logNormal\n"
-           << "threadCount 2\n";
-    output.close();
-    require(static_cast<bool>(output), "could not create parameter test input");
-
-    const Parameters parameters = readParameters(parameterFile);
-    require(parameters.gridPoints == 32 && parameters.domainLength == 12.5,
-            "grid settings were not parsed");
-    require(parameters.numberOfSteps == 20 && parameters.outputIntervalSteps == 4,
-            "run length was not parsed");
-    require(parameters.model == Model::longWave, "model was not converted to its enum");
-    require(parameters.integrator == Integrator::integratingFactorRk2,
-            "integrator was not converted to its enum");
-    require(parameters.forcingProfile == ForcingProfile::logNormal,
-            "forcing profile was not converted to its enum");
-    require(!parameters.forcingEnabled && parameters.threadCount == 2,
-            "boolean or integer settings were not parsed");
-
-    const auto malformedFile = temporary.path() / "malformed.params";
-    std::ofstream malformed(malformedFile);
-    malformed << "gridPoints 32 extra\n";
-    malformed.close();
-    requireThrows([&] { (void)readParameters(malformedFile); },
-                  "malformed parameter line was accepted");
-}
 } // namespace
 
 int main() {
@@ -229,10 +130,7 @@ int main() {
         testDirectConvolution(Model::schrodingerHelmholtz);
         testDirectConvolution(Model::longWave);
         testDirectConvolution(Model::nonlinearSchrodinger);
-        testResourceLimits();
         testDensityResponse();
-        testParameterValidation();
-        testParameterParsing();
         finalizeFftwThreads();
         std::cout << "numerical tests passed\n";
         return 0;

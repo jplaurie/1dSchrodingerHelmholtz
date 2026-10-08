@@ -8,6 +8,8 @@
 enum class Model : std::uint8_t { schrodingerHelmholtz, longWave, nonlinearSchrodinger };
 enum class Integrator : std::uint8_t { etd2, etd4, integratingFactorRk2 };
 enum class ForcingProfile : std::uint8_t { annulus, gaussian, exponential, logNormal, singleMode };
+enum class FftwPlanning : std::uint8_t { estimate, measure, patient };
+enum class FieldOutputFormat : std::uint8_t { text, hdf5, both };
 
 struct Parameters {
     std::size_t gridPoints = 512;
@@ -39,6 +41,10 @@ struct Parameters {
     std::uint64_t randomSeed = 1;
 
     bool writeModeDiagnostics = false;
+    FieldOutputFormat fieldOutputFormat = FieldOutputFormat::text;
+    int hdf5CompressionLevel = 0;
+    FftwPlanning fftwPlanning = FftwPlanning::estimate;
+    std::filesystem::path fftwWisdomFile;
     int threadCount = 1;
     bool overwriteOutput = false;
     std::filesystem::path initialConditionFile;
@@ -46,6 +52,10 @@ struct Parameters {
     std::filesystem::path outputDirectory = "output";
 
     [[nodiscard]] std::size_t paddedGridPoints() const { return 3 * gridPoints / 2; }
+    [[nodiscard]] bool usesEtd() const { return integrator != Integrator::integratingFactorRk2; }
+    [[nodiscard]] std::size_t nonlinearStageCount() const {
+        return integrator == Integrator::etd4 ? 4 : 2;
+    }
     [[nodiscard]] bool usesStochasticForcing() const {
         return forcingEnabled && forcingProfile != ForcingProfile::singleMode;
     }
@@ -57,6 +67,8 @@ struct Parameters {
 [[nodiscard]] const char *modelName(Model model);
 [[nodiscard]] const char *integratorName(Integrator integrator);
 [[nodiscard]] const char *forcingProfileName(ForcingProfile profile);
+[[nodiscard]] const char *fftwPlanningName(FftwPlanning planning);
+[[nodiscard]] const char *fieldOutputFormatName(FieldOutputFormat format);
 Parameters readParameters(const std::filesystem::path &path);
 void validateParameters(const Parameters &parameters);
 void writeParameterRecord(const Parameters &parameters, const std::filesystem::path &directory,
