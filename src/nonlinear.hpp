@@ -18,12 +18,16 @@ class NonlinearOperator {
                                        const SpectralField &wavefunctionDot, SpectralField &result);
 
   private:
-    void applyDensityResponse(SpectralField &density) const;
+    void transformDensity(const SpectralField &wavefunction);
+    void extractDensity(SpectralField &result) const;
 
     Parameters parameters_;
-    ComplexTransform paddedTransform_;
-    SpectralField paddedWavefunction_, physicalWavefunction_, density_, densitySpectrum_;
-    SpectralField potential_, nonlinearPhysical_, nonlinearSpectrum_;
-    SpectralField paddedWavefunctionDerivative_, physicalWavefunctionDerivative_;
+    // Reuse the spectral input for the final physical product, and the density
+    // spectrum for the final nonlinear spectrum. Plans operate directly on
+    // these aligned buffers, avoiding copies through a transform wrapper.
+    FftwField paddedWavefunction_, physicalWavefunction_, densitySpectrum_, potential_;
+    FftwField physicalWavefunctionDerivative_;
     std::vector<double> densityResponse_;
+    FftwPlan inverseWavefunction_, forwardDensity_, inverseDensity_, forwardNonlinear_;
+    FftwPlan inverseDerivative_;
 };

@@ -41,20 +41,27 @@ void advanceHostTimeStep(const Parameters &parameters, const IntegrationCoeffici
     auto &b = workspace.stageStates[1];
     auto &c = workspace.stageStates[2];
 
+    // Project the vector field at every stage, not just the completed step.
+    // Otherwise forbidden modes can feed back into retained modes within a step.
+    enforceConstraints(state);
     rightHandSide(state, n1);
+    enforceConstraints(n1);
     for (std::size_t i = 0; i < state.size(); ++i)
         a[i] = integrationStageA(parameters.integrator, parameters.timeStep, i, coefficients,
                                  state[i], n1[i]);
     rightHandSide(a, n2);
+    enforceConstraints(n2);
     if (!n3.empty()) {
         for (std::size_t i = 0; i < state.size(); ++i)
             b[i] = integrationStageB(i, coefficients, state[i], n1[i], n2[i]);
         rightHandSide(b, n3);
+        enforceConstraints(n3);
     }
     if (!n4.empty()) {
         for (std::size_t i = 0; i < state.size(); ++i)
             c[i] = integrationStageC(i, coefficients, state[i], n1[i], n3[i]);
         rightHandSide(c, n4);
+        enforceConstraints(n4);
     }
     for (std::size_t i = 0; i < state.size(); ++i) {
         const IntegrationFinishValues values{.initial = state[i],

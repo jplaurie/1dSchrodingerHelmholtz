@@ -42,7 +42,10 @@ def load_wavefunction(
     except ImportError as error:
         raise ImportError("h5py is required to read HDF5 wavefunction files") from error
     with h5py.File(hdf5_path, "r") as handle:
-        if handle.attrs.get("format", "") != "sh1d_wavefunction_v1":
+        field_format = handle.attrs.get("format", "")
+        if isinstance(field_format, bytes):
+            field_format = field_format.decode("utf-8")
+        if field_format != "sh1d_wavefunction_v1":
             raise ValueError(f"unsupported HDF5 wavefunction format: {hdf5_path}")
         values = np.asarray(handle["wavefunction"], dtype=float)
         count = int(handle.attrs["grid_points"])

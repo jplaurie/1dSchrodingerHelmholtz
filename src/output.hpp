@@ -10,6 +10,13 @@
 #include <string>
 #include <vector>
 
+struct DiagnosticsAverages {
+    std::uint64_t count = 0;
+    std::vector<double> spectrum;
+    std::vector<double> waveFlux;
+    std::vector<double> energyFlux;
+};
+
 struct RestartState {
     double time = 0.0;
     std::uint64_t frame = 0;
@@ -17,14 +24,8 @@ struct RestartState {
     SpectralField wavefunction;
     std::string randomEngineState;
     std::string normalDistributionState;
+    DiagnosticsAverages averages;
     bool restarting = false;
-};
-
-struct DiagnosticsAverages {
-    std::uint64_t count = 0;
-    std::vector<double> spectrum;
-    std::vector<double> waveFlux;
-    std::vector<double> energyFlux;
 };
 
 RestartState readRestartOrInitial(const Parameters &parameters, ComplexTransform &baseTransform);

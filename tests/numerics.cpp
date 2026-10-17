@@ -3,6 +3,7 @@
 #include "parameters.hpp"
 #include "spectral.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <map>
@@ -118,11 +119,89 @@ void testDensityResponse() {
     require(densityResponseMultiplier(p, 4.0) == 1.0, "NLS density response is incorrect");
 }
 
+void testCutoffConvolution(Model model, bool removeMean, FftwPlanning planning) {
+    Parameters p;
+    p.gridPoints = 12;
+    p.model = model;
+    p.fftwPlanning = planning;
+    p.nonlinearityCoefficient = 1.3;
+    p.helmholtzParameter = 0.35;
+    p.hypoviscosity = removeMean ? 0.1 : 0.0;
+    configureFftw(p, false);
+    NonlinearOperator nonlinear(p);
+    SpectralField w(p.gridPoints), actual, density, densityDot;
+    const long cutoff = static_cast<long>(p.gridPoints / 2);
+    const auto index = [&](long k) {
+        return static_cast<std::size_t>(k < 0 ? k + p.gridPoints : k);
+    };
+    for (std::size_t i = 0; i < w.size(); ++i)
+        w[i] = {0.22 * std::cos(0.71 * i), 0.17 * std::sin(0.39 * i)};
+    enforceStateConstraints(p, w);
+    std::map<long, Complex> rho;
+    for (long d = -cutoff + 1; d < cutoff; ++d)
+        for (long j = -cutoff + 1; j < cutoff; ++j)
+            if (j + d > -cutoff && j + d < cutoff)
+                rho[d] += w[index(j + d)] * std::conj(w[index(j)]);
+    nonlinear.evaluate(w, actual);
+    nonlinear.densitySpectrum(w, density);
+    SpectralField rate = actual;
+    double massRate = 0.0, momentumRate = 0.0, energyRate = 0.0;
+    for (std::size_t i = 0; i < w.size(); ++i) {
+        const long k = signedWave(i, w.size());
+        Complex expected{};
+        if (retainedStateMode(p, i))
+            for (const auto &[d, value] : rho)
+                if (k - d > -cutoff && k - d < cutoff)
+                    expected += Complex(0.0, -p.nonlinearityCoefficient) *
+                                densityResponseMultiplier(p, static_cast<double>(d * d)) * value *
+                                w[index(k - d)];
+        require(std::abs(actual[i] - expected) < 2.e-12,
+                "cutoff nonlinear convolution or wavefunction projector is incorrect");
+        require(std::abs(density[i] - (k == -cutoff ? Complex{} : rho[k])) < 2.e-12,
+                "cutoff density convolution is incorrect");
+        const double weight = 0.5 * k * k + 0.2;
+        rate[i] += Complex(0.0, -weight) * w[i];
+        const double transfer = 2.0 * std::real(std::conj(w[i]) * rate[i]);
+        massRate += transfer;
+        momentumRate += k * transfer;
+        energyRate += weight * transfer;
+    }
+    nonlinear.densityTimeDerivativeSpectrum(w, rate, densityDot);
+    for (std::size_t i = 0; i < w.size(); ++i) {
+        const double k = waveNumber(p, i);
+        energyRate += p.nonlinearityCoefficient * densityResponseMultiplier(p, k * k) *
+                      std::real(std::conj(density[i]) * densityDot[i]);
+    }
+    require(std::max({std::abs(massRate), std::abs(momentumRate), std::abs(energyRate)}) < 2.e-12,
+            "projected mass, momentum, or Hamiltonian transfer does not close");
+    // Repeatedly switching diagnostic/evolution calls exercises shared FFT buffers.
+    nonlinear.evaluate(w, densityDot);
+    for (std::size_t i = 0; i < w.size(); ++i)
+        require(std::abs(densityDot[i] - actual[i]) < 2.e-12,
+                "diagnostics corrupted nonlinear workspace");
+}
+
+void testZeroCoupling() {
+    Parameters p;
+    p.gridPoints = 8;
+    p.nonlinearityCoefficient = 0.0;
+    NonlinearOperator nonlinear(p);
+    SpectralField w(8, Complex(1.0, 0.2)), result(8, Complex(9.0, 0.0));
+    nonlinear.evaluate(w, result);
+    require(std::all_of(result.begin(), result.end(), [](Complex v) { return v == Complex{}; }),
+            "zero coupling did not clear the nonlinear result");
+    w.assign(8, Complex{});
+    w[1] = 0.3;
+    nonlinear.densitySpectrum(w, result);
+    require(std::abs(result[0] - 0.09) < 1.e-14,
+            "zero coupling incorrectly disabled density diagnostics");
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
     try {
-        initializeFftwThreads(1);
+        initializeFftwThreads(argc == 2 ? std::stoi(argv[1]) : 1);
         testPlaneWave(Model::schrodingerHelmholtz);
         testPlaneWave(Model::longWave);
         testPlaneWave(Model::nonlinearSchrodinger);
@@ -131,6 +210,12 @@ int main() {
         testDirectConvolution(Model::longWave);
         testDirectConvolution(Model::nonlinearSchrodinger);
         testDensityResponse();
+        for (auto planning : {FftwPlanning::estimate, FftwPlanning::measure})
+            for (auto model :
+                 {Model::schrodingerHelmholtz, Model::longWave, Model::nonlinearSchrodinger})
+                for (bool removeMean : {false, true})
+                    testCutoffConvolution(model, removeMean, planning);
+        testZeroCoupling();
         finalizeFftwThreads();
         std::cout << "numerical tests passed\n";
         return 0;

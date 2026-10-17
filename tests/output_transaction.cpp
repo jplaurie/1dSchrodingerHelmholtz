@@ -46,10 +46,36 @@ void require(bool condition, const char *message) {
     if (!condition)
         throw std::runtime_error(message);
 }
+
+void testCsvRecovery() {
+    TemporaryDirectory temporary;
+    Parameters p;
+    p.dataDirectory = temporary.path() / "data";
+    p.outputDirectory = temporary.path() / "output";
+    p.writeModeDiagnostics = true;
+    prepareOutput(p, false, 0);
+    for (const char *name : {"diagnostics.csv", "spectra.csv", "fluxes.csv", "modes.csv"}) {
+        const auto path = p.outputDirectory / name;
+        const auto header = read(path);
+        write(path, "0.1,1,42\n# retained comment\n", std::ios::app);
+        const auto committed = read(path);
+        write(path, "0.2,2,99\n0.3,3,99\n", std::ios::app);
+        prepareOutput(p, true, 1);
+        require(read(path) == committed, "streamed CSV recovery lost committed rows");
+        const auto sentinel =
+            std::filesystem::file_time_type::clock::now() - std::chrono::hours(24);
+        std::filesystem::last_write_time(path, sentinel);
+        prepareOutput(p, true, 1);
+        require(std::filesystem::last_write_time(path) == sentinel,
+                "clean CSV recovery unnecessarily rewrote the file");
+        require(read(path).starts_with(header), "CSV recovery lost its header");
+    }
+}
 } // namespace
 
 int main() {
     try {
+        testCsvRecovery();
         TemporaryDirectory temporary;
         Parameters parameters;
         parameters.dataDirectory = temporary.path() / "data";

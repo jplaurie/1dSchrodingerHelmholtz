@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -79,9 +80,22 @@ void writeStringAttribute(hid_t object, const char *name, const char *value) {
                    std::string("cannot write HDF5 attribute: ") + name);
 }
 
-template <class T> T readScalarAttribute(hid_t object, const char *name, hid_t type) {
+Attribute scalarAttribute(hid_t object, const char *name) {
     Attribute attribute(requireId(H5Aopen(object, name, H5P_DEFAULT),
                                   std::string("missing HDF5 attribute: ") + name));
+    DataSpace space(requireId(H5Aget_space(attribute.get()), "cannot inspect HDF5 attribute"));
+    if (H5Sget_simple_extent_type(space.get()) != H5S_SCALAR)
+        throw std::runtime_error(std::string("HDF5 attribute must be scalar: ") + name);
+    return attribute;
+}
+
+template <class T> T readScalarAttribute(hid_t object, const char *name, hid_t type) {
+    auto attribute = scalarAttribute(object, name);
+    DataType storedType(
+        requireId(H5Aget_type(attribute.get()), "cannot inspect HDF5 attribute type"));
+    const auto typeClass = H5Tget_class(storedType.get());
+    if (typeClass != H5T_INTEGER && typeClass != H5T_FLOAT)
+        throw std::runtime_error(std::string("HDF5 attribute must be numeric: ") + name);
     T value{};
     requireSuccess(H5Aread(attribute.get(), type, &value),
                    std::string("cannot read HDF5 attribute: ") + name);
@@ -89,9 +103,23 @@ template <class T> T readScalarAttribute(hid_t object, const char *name, hid_t t
 }
 
 std::string readStringAttribute(hid_t object, const char *name) {
-    Attribute attribute(requireId(H5Aopen(object, name, H5P_DEFAULT),
-                                  std::string("missing HDF5 attribute: ") + name));
+    auto attribute = scalarAttribute(object, name);
     DataType type(requireId(H5Aget_type(attribute.get()), "cannot inspect HDF5 string attribute"));
+    if (H5Tget_class(type.get()) != H5T_STRING)
+        throw std::runtime_error(std::string("HDF5 attribute must be a string: ") + name);
+    const auto variable = H5Tis_variable_str(type.get());
+    if (variable < 0)
+        throw std::runtime_error("cannot inspect HDF5 string type");
+    if (variable) {
+        char *value = nullptr;
+        requireSuccess(H5Aread(attribute.get(), type.get(), &value),
+                       std::string("cannot read HDF5 attribute: ") + name);
+        const auto freeString = [](char *text) { H5free_memory(text); };
+        std::unique_ptr<char, decltype(freeString)> owned(value, freeString);
+        if (!value || std::strlen(value) > 1024)
+            throw std::runtime_error("invalid HDF5 string attribute size");
+        return value;
+    }
     const std::size_t size = H5Tget_size(type.get());
     if (size == 0 || size > 1024)
         throw std::runtime_error("invalid HDF5 string attribute size");

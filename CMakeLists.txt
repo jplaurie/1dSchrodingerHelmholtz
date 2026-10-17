@@ -137,11 +137,21 @@ if(BUILD_TESTING)
   target_link_libraries(sh1d_numerics_tests PRIVATE sh1d_common)
   sh1d_enable_warnings(sh1d_numerics_tests)
   add_test(NAME nonlinear_direct_convolution COMMAND sh1d_numerics_tests)
+  if(SH1D_OPENMP AND FFTW_THREADS_LIBRARY)
+    add_test(NAME nonlinear_direct_convolution_threaded COMMAND sh1d_numerics_tests 2)
+  endif()
 
   add_executable(sh1d_output_transaction_tests tests/output_transaction.cpp)
   target_link_libraries(sh1d_output_transaction_tests PRIVATE sh1d_common)
   sh1d_enable_warnings(sh1d_output_transaction_tests)
   add_test(NAME output_transaction_recovery COMMAND sh1d_output_transaction_tests)
+
+  if(TARGET sh1d_hdf5_export)
+    add_executable(sh1d_hdf5_metadata_tests tests/hdf5_metadata.cpp)
+    target_link_libraries(sh1d_hdf5_metadata_tests PRIVATE sh1d_common)
+    sh1d_enable_warnings(sh1d_hdf5_metadata_tests)
+    add_test(NAME hdf5_metadata_validation COMMAND sh1d_hdf5_metadata_tests)
+  endif()
 
   find_package(Python3 COMPONENTS Interpreter)
   if(Python3_Interpreter_FOUND)
@@ -159,6 +169,15 @@ if(BUILD_TESTING)
         --executable $<TARGET_FILE:schrodinger_helmholtz>
         --exporter $<TARGET_FILE:sh1d_hdf5_export>)
       set_tests_properties(hdf5_output PROPERTIES TIMEOUT 120)
+      execute_process(COMMAND ${Python3_EXECUTABLE} -c "import numpy, matplotlib, h5py"
+        RESULT_VARIABLE SH1D_PLOTTING_IMPORT_RESULT OUTPUT_QUIET ERROR_QUIET)
+      if(SH1D_PLOTTING_IMPORT_RESULT EQUAL 0)
+        add_test(NAME hdf5_plotting COMMAND ${Python3_EXECUTABLE}
+          ${CMAKE_CURRENT_SOURCE_DIR}/tests/hdf5_plotting.py
+          --executable $<TARGET_FILE:schrodinger_helmholtz>)
+        set_tests_properties(hdf5_plotting PROPERTIES TIMEOUT 120
+          ENVIRONMENT "MPLBACKEND=Agg;MPLCONFIGDIR=${CMAKE_CURRENT_BINARY_DIR}/matplotlib")
+      endif()
     endif()
   endif()
 endif()

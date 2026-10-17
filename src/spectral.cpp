@@ -14,6 +14,11 @@ double waveNumber(const Parameters &parameters, std::size_t index) {
            parameters.domainLength;
 }
 
+bool retainedStateMode(const Parameters &parameters, std::size_t index) {
+    return index != parameters.gridPoints / 2 &&
+           !(index == 0 && parameters.hypoviscosity > 0.0 && parameters.hypoviscosityOrder < 0.0);
+}
+
 double densityResponseMultiplier(const Parameters &parameters, double k2) {
     switch (parameters.model) {
     case Model::schrodingerHelmholtz:
@@ -33,8 +38,8 @@ std::size_t paddedIndexForBaseMode(const Parameters &parameters, std::size_t ind
                : static_cast<std::size_t>(static_cast<long>(parameters.paddedGridPoints()) + mode);
 }
 
-void embedBaseSpectrum(const Parameters &parameters, const SpectralField &base,
-                       SpectralField &padded) {
+void embedBaseSpectrum(const Parameters &parameters, std::span<const Complex> base,
+                       std::span<Complex> padded) {
     if (base.size() != parameters.gridPoints || padded.size() != parameters.paddedGridPoints())
         throw std::runtime_error("invalid field size while embedding spectrum");
     std::fill(padded.begin(), padded.end(), Complex{});
@@ -42,15 +47,15 @@ void embedBaseSpectrum(const Parameters &parameters, const SpectralField &base,
         padded[paddedIndexForBaseMode(parameters, i)] = base[i];
 }
 
-void extractBaseSpectrum(const Parameters &parameters, const SpectralField &padded,
-                         SpectralField &base) {
+void extractBaseSpectrum(const Parameters &parameters, std::span<const Complex> padded,
+                         std::span<Complex> base) {
     if (base.size() != parameters.gridPoints || padded.size() != parameters.paddedGridPoints())
         throw std::runtime_error("invalid field size while extracting spectrum");
     for (std::size_t i = 0; i < base.size(); ++i)
         base[i] = padded[paddedIndexForBaseMode(parameters, i)];
 }
 
-void filterPaddedSpectrum(const Parameters &parameters, SpectralField &field) {
+void filterPaddedSpectrum(const Parameters &parameters, std::span<Complex> field) {
     if (field.size() != parameters.paddedGridPoints())
         throw std::runtime_error("invalid padded field size");
     const long cutoff = static_cast<long>(parameters.gridPoints / 2);

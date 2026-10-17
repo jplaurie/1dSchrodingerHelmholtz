@@ -183,6 +183,8 @@ void Solver::buildIntegrationCoefficients() {
 
 void Solver::buildForcing() {
     for (std::size_t i = 0; i < parameters_.gridPoints; ++i) {
+        if (!retainedStateMode(parameters_, i))
+            continue;
         const double amplitude = forcingEnvelope(parameters_, i);
         if (!std::isfinite(amplitude))
             throw std::runtime_error("forcing profile contains a non-finite value");
@@ -337,10 +339,10 @@ double Solver::benchmark(std::uint64_t warmupSteps, std::uint64_t measuredSteps)
     return std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
 }
 
-double Solver::writeOutputFrame(const RestartState &state, DiagnosticsAverages &averages) {
+double Solver::writeOutputFrame(RestartState &state) {
     beginOutputTransaction(parameters_, state.frame);
     const double energy = appendDiagnostics(parameters_, nonlinearOperator_, state.time,
-                                            state.frame, state.wavefunction, averages);
+                                            state.frame, state.wavefunction, state.averages);
     writeState(state);
     finishOutputTransaction(parameters_);
     return energy;
@@ -348,7 +350,6 @@ double Solver::writeOutputFrame(const RestartState &state, DiagnosticsAverages &
 
 void Solver::run() {
     RestartState state = prepareRun();
-    DiagnosticsAverages averages;
     const auto start = std::chrono::steady_clock::now();
     for (std::uint64_t stepIndex = 0; stepIndex < parameters_.numberOfSteps; ++stepIndex) {
         const std::uint64_t stepNumber = stepIndex + 1;
@@ -357,7 +358,7 @@ void Solver::run() {
         if (stepNumber % parameters_.outputIntervalSteps == 0 ||
             stepNumber == parameters_.numberOfSteps) {
             ++state.frame;
-            const double energy = writeOutputFrame(state, averages);
+            const double energy = writeOutputFrame(state);
             std::cout << "time = " << state.time << " file = " << state.frame
                       << " Energy = " << energy << '\n';
         }

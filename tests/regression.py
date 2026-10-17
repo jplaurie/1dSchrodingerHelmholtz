@@ -7,6 +7,7 @@ import argparse
 import csv
 import math
 import subprocess
+import struct
 import tempfile
 from pathlib import Path
 
@@ -133,7 +134,12 @@ def main() -> None:
         split_data, split_output = root / "split-data", root / "split-output"
         write_parameters(split_parameters, initial, split_data, split_output, 20)
         run(args.executable, split_parameters)
+        csv_inodes = {name: (split_output / name).stat().st_ino
+                      for name in ("diagnostics.csv", "spectra.csv", "fluxes.csv", "modes.csv")}
         run(args.executable, split_parameters)
+        for name, inode in csv_inodes.items():
+            if (split_output / name).stat().st_ino != inode:
+                raise AssertionError(f"clean restart unnecessarily rewrote {name}")
 
         full_parameters = root / "full.params"
         full_data, full_output = root / "full-data", root / "full-output"
@@ -147,6 +153,28 @@ def main() -> None:
         error = max(abs(a - b) for a, b in zip(split, full, strict=True))
         if error > 2.0e-12:
             raise AssertionError(f"split restart differs from full run: {error}")
+        for name in ("spectra.csv", "fluxes.csv"):
+            if (split_output / name).read_bytes() != (full_output / name).read_bytes():
+                raise AssertionError(f"split restart changed running statistics in {name}")
+
+        # Remove the new statistics extension to emulate an original v1 checkpoint.
+        legacy_parameters = root / "legacy.params"
+        legacy_data, legacy_output = root / "legacy-data", root / "legacy-output"
+        write_parameters(legacy_parameters, initial, legacy_data, legacy_output, 20)
+        run(args.executable, legacy_parameters)
+        checkpoint = legacy_data / "checkpoint_00000002.bin"
+        payload = bytearray(checkpoint.read_bytes())
+        offset = 56
+        for _ in range(2):
+            size = struct.unpack_from("=Q", payload, offset)[0]
+            offset += 8 + size
+        offset += 32 * 16
+        struct.pack_into("=Q", payload, 8, 1)
+        checkpoint.write_bytes(payload[:offset])
+        run(args.executable, legacy_parameters)
+        for name in ("spectra.csv", "fluxes.csv"):
+            if (legacy_output / name).read_bytes() != (full_output / name).read_bytes():
+                raise AssertionError(f"v1 checkpoint failed to recover averages in {name}")
 
         with (split_output / "diagnostics.csv").open(encoding="utf-8") as handle:
             rows = list(csv.DictReader(handle))
@@ -178,6 +206,10 @@ def main() -> None:
         run(args.executable, corrupt_parameters)
         with (corrupt_data / "checkpoint_00000001.bin").open("ab") as handle:
             handle.write(b"unexpected trailing data")
+        require_run_failure(args.executable, corrupt_parameters)
+        # A missing statistics tail must not be mistaken for a legacy checkpoint.
+        checkpoint = corrupt_data / "checkpoint_00000001.bin"
+        checkpoint.write_bytes(checkpoint.read_bytes()[:-40])
         require_run_failure(args.executable, corrupt_parameters)
 
         header_parameters = root / "bad-header.params"
@@ -274,6 +306,26 @@ def main() -> None:
             run(args.executable, parameters)
             if not (data / "wavefunction_00000001.dat").is_file():
                 raise AssertionError(f"{profile} forcing did not finish")
+
+        invalid_forcing = root / "nyquist-forcing.params"
+        write_parameters(invalid_forcing, initial, root / "nyquist-data", root / "nyquist-output", 1)
+        invalid_forcing.write_text(invalid_forcing.read_text().replace("forcingWavenumber 4", "forcingWavenumber 16")
+                                  .replace("forcingWidth 1", "forcingWidth 0.1"))
+        require_run_failure(args.executable, invalid_forcing)
+        normalized = root / "normalized.params"
+        write_parameters(normalized, initial, root / "normalized-data", root / "normalized-output", 1,
+                         forcing_profile="gaussian")
+        normalized.write_text(normalized.read_text().replace("forcingWavenumber 4", "forcingWavenumber 14")
+                              .replace("forcingWidth 1", "forcingWidth 4")
+                              .replace("targetWaveActionInjectionRate 0", "targetWaveActionInjectionRate 1"))
+        run(args.executable, normalized)
+        with (root / "normalized-output/forcing_spectrum.csv").open() as handle:
+            forcing = list(csv.DictReader(handle))
+        amplitudes = {int(row["mode"]): float(row["amplitude"]) for row in forcing}
+        if amplitudes[-16] != 0 or amplitudes[0] != 0:
+            raise AssertionError("forcing contains a forbidden mode")
+        if not math.isclose(sum(a*a for a in amplitudes.values()), 1, rel_tol=2.e-14):
+            raise AssertionError("admissible forcing was not normalized to its target")
 
         for model in (
             "schrodingerHelmholtz",

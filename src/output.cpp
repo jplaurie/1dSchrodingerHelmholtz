@@ -78,6 +78,76 @@ std::string readString(std::istream &in) {
     return value;
 }
 
+void validateAverages(const Parameters &parameters, const RestartState &state) {
+    if (state.averages.count != state.frame)
+        throw std::runtime_error("checkpoint diagnostic sample count does not match its frame");
+    const auto expected = state.averages.count == 0 ? 0 : parameters.gridPoints / 2;
+    for (const auto *values :
+         {&state.averages.spectrum, &state.averages.waveFlux, &state.averages.energyFlux})
+        if (values->size() != expected ||
+            !std::all_of(values->begin(), values->end(), [](double v) { return std::isfinite(v); }))
+            throw std::runtime_error("invalid checkpoint diagnostic averages");
+}
+
+// Version-one checkpoints did not store sums. Reconstruct their history once
+// from instantaneous CSV columns, rather than their segment-local averages.
+void restoreLegacyAverages(const Parameters &parameters, RestartState &state) {
+    const auto bins = parameters.gridPoints / 2;
+    auto &averages = state.averages;
+    averages.spectrum.assign(bins, 0.0);
+    averages.waveFlux.assign(bins, 0.0);
+    averages.energyFlux.assign(bins, 0.0);
+    const auto accumulate = [&](const char *name, std::string_view header,
+                                std::vector<double> &first, std::vector<double> *second) {
+        const auto path = parameters.outputDirectory / name;
+        std::ifstream input(path);
+        std::string line;
+        if (!std::getline(input, line) || line != header)
+            throw std::runtime_error("cannot restore legacy averages from: " + path.string());
+        std::uint64_t completedFrames = 0;
+        std::size_t bin = 0;
+        while (std::getline(input, line)) {
+            if (line.empty() || line.front() == '#')
+                continue;
+            std::istringstream fields(line);
+            std::array<std::string, 7> columns;
+            const std::size_t count = second ? 7 : 6;
+            for (std::size_t i = 0; i < count; ++i)
+                if (!std::getline(fields, columns[i], ','))
+                    throw std::runtime_error("incomplete legacy CSV row: " + path.string());
+            const auto frame = parseFrame(columns[1], path);
+            if (frame > state.frame)
+                continue;
+            if (completedFrames == state.frame || frame != completedFrames + 1)
+                throw std::runtime_error("legacy CSV frames are incomplete or unordered: " +
+                                         path.string());
+            const auto number = [&](std::size_t column) {
+                double value = 0.0;
+                const auto &text = columns[column];
+                const auto [end, error] =
+                    std::from_chars(text.data(), text.data() + text.size(), value);
+                if (error != std::errc{} || end != text.data() + text.size() ||
+                    !std::isfinite(value))
+                    throw std::runtime_error("invalid legacy diagnostic value: " + path.string());
+                return value;
+            };
+            first[bin] += number(3);
+            if (second)
+                (*second)[bin] += number(4);
+            if (++bin == bins) {
+                bin = 0;
+                ++completedFrames;
+            }
+        }
+        if (!input.eof() || bin != 0 || completedFrames != state.frame)
+            throw std::runtime_error("legacy diagnostic history is incomplete: " + path.string());
+    };
+    accumulate("spectra.csv", spectraHeader, averages.spectrum, nullptr);
+    accumulate("fluxes.csv", fluxesHeader, averages.waveFlux, &averages.energyFlux);
+    averages.count = state.frame;
+    validateAverages(parameters, state);
+}
+
 SpectralField readInitialCondition(const Parameters &parameters, ComplexTransform &transform) {
     SpectralField spectral(parameters.gridPoints), physical(parameters.gridPoints);
     if (parameters.initialConditionFile.empty())
@@ -149,7 +219,8 @@ RestartState readCheckpoint(const Parameters &parameters, const std::filesystem:
     readBinary(in, state.time);
     readBinary(in, state.frame);
     readBinary(in, state.randomSeed);
-    if (version != 1 || count != parameters.gridPoints ||
+    if ((version != 1 && version != 2) || count != parameters.gridPoints ||
+        !std::isfinite(domainLength) ||
         std::abs(domainLength - parameters.domainLength) >
             1.e-12 * std::max(1.0, std::abs(parameters.domainLength)))
         throw std::runtime_error("checkpoint grid or domain does not match the parameter file");
@@ -162,6 +233,19 @@ RestartState readCheckpoint(const Parameters &parameters, const std::filesystem:
         readBinary(in, imaginary);
         coefficient = Complex(real, imaginary);
     }
+    if (version == 2) {
+        readBinary(in, state.averages.count);
+        if (state.averages.count != state.frame)
+            throw std::runtime_error("checkpoint diagnostic sample count does not match its frame");
+        if (state.averages.count != 0)
+            for (auto *values :
+                 {&state.averages.spectrum, &state.averages.waveFlux, &state.averages.energyFlux}) {
+                values->resize(parameters.gridPoints / 2);
+                for (double &value : *values)
+                    readBinary(in, value);
+            }
+        validateAverages(parameters, state);
+    }
     if (!std::isfinite(state.time) || state.time < 0.0 || !finiteField(state.wavefunction) ||
         in.peek() != std::ifstream::traits_type::eof())
         throw std::runtime_error("invalid checkpoint payload: " + path.string());
@@ -173,12 +257,13 @@ void writeCheckpoint(const Parameters &parameters, const RestartState &state,
                      const std::string &randomEngineState,
                      const std::string &normalDistributionState,
                      const std::filesystem::path &path) {
+    validateAverages(parameters, state);
     writeAtomic(path, [&](const std::filesystem::path &temporary) {
         std::ofstream out(temporary, std::ios::binary);
         if (!out)
             throw std::runtime_error("cannot write checkpoint: " + path.string());
         out.write(checkpointMagic.data(), static_cast<std::streamsize>(checkpointMagic.size()));
-        const std::uint64_t version = 1;
+        const std::uint64_t version = 2;
         writeBinary(out, version);
         writeBinary(out, static_cast<std::uint64_t>(parameters.gridPoints));
         writeBinary(out, parameters.domainLength);
@@ -191,6 +276,11 @@ void writeCheckpoint(const Parameters &parameters, const RestartState &state,
             writeBinary(out, coefficient.real());
             writeBinary(out, coefficient.imag());
         }
+        writeBinary(out, state.averages.count);
+        for (const auto *values :
+             {&state.averages.spectrum, &state.averages.waveFlux, &state.averages.energyFlux})
+            for (double value : *values)
+                writeBinary(out, value);
         out.close();
         if (!out)
             throw std::runtime_error("failed while writing checkpoint: " + path.string());
@@ -221,25 +311,37 @@ void trimCsv(const std::filesystem::path &path, std::uint64_t committedFrame,
     std::string line;
     if (!std::getline(input, line) || line != expectedHeader)
         throw std::runtime_error("CSV header does not match this solver version: " + path.string());
-    std::vector<std::string> retained{line};
-    while (std::getline(input, line)) {
-        if (line.empty() || line.front() == '#') {
-            retained.push_back(line);
-            continue;
-        }
-        std::istringstream fields(line);
+    const auto retain = [&](const std::string &row) {
+        if (row.empty() || row.front() == '#')
+            return true;
+        std::istringstream fields(row);
         std::string timeText, frameText;
         if (!std::getline(fields, timeText, ',') || !std::getline(fields, frameText, ','))
             throw std::runtime_error("malformed CSV during recovery: " + path.string());
-        const auto frame = parseFrame(frameText, path);
-        if (frame <= committedFrame)
-            retained.push_back(line);
-    }
-    input.close();
+        return parseFrame(frameText, path) <= committedFrame;
+    };
+    bool needsTrimming = false;
+    while (std::getline(input, line))
+        if (!retain(line))
+            needsTrimming = true;
+    if (!input.eof())
+        throw std::runtime_error("cannot read output for recovery: " + path.string());
+    if (!needsTrimming)
+        return;
+    input.clear();
+    input.seekg(0);
+    if (!input)
+        throw std::runtime_error("cannot rewind output for recovery: " + path.string());
     writeAtomic(path, [&](const std::filesystem::path &temporary) {
         auto out = numericOutput(temporary);
-        for (const auto &entry : retained)
-            out << entry << '\n';
+        std::getline(input, line); // Header was validated above.
+        out << line << '\n';
+        while (std::getline(input, line))
+            if (retain(line))
+                out << line << '\n';
+        if (!input.eof())
+            throw std::runtime_error("cannot read output for recovery: " + path.string());
+        input.close();
         closeChecked(out, "cannot recover output: " + path.string());
     });
 }
@@ -278,6 +380,9 @@ RestartState readRestartOrInitial(const Parameters &parameters, ComplexTransform
     RestartState state = readCheckpoint(parameters, parameters.dataDirectory / checkpointName);
     if (state.frame != frame || std::abs(state.time - time) > 1.e-12)
         throw std::runtime_error("restart state and checkpoint disagree");
+    if (state.frame != 0 && state.averages.count == 0)
+        restoreLegacyAverages(parameters, state);
+    enforceStateConstraints(parameters, state.wavefunction);
     return state;
 }
 

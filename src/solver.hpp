@@ -28,7 +28,7 @@ class Solver {
     void validateRunBounds(const RestartState &state) const;
     void restoreRandomState(RestartState &state);
     void writeState(const RestartState &state);
-    double writeOutputFrame(const RestartState &state, DiagnosticsAverages &averages);
+    double writeOutputFrame(RestartState &state);
     [[nodiscard]] SpectralField makeBenchmarkState() const;
 
     Parameters parameters_;

@@ -16,7 +16,7 @@ std::filesystem::path wisdomPath;
 bool threadsInitialized = false;
 #endif
 
-fftw_complex *fftwData(SpectralField &field) {
+fftw_complex *fftwData(std::span<Complex> field) {
     static_assert(sizeof(Complex) == sizeof(fftw_complex));
     return reinterpret_cast<fftw_complex *>(field.data());
 }
@@ -50,6 +50,17 @@ unsigned fftwPlanningFlags() { return planningFlags; }
 void FftwDeleter::operator()(fftw_plan_s *plan) const {
     if (plan)
         fftw_destroy_plan(plan);
+}
+
+FftwPlan makeFftwPlan(std::span<Complex> input, std::span<Complex> output, int sign) {
+    if (input.empty() || input.size() != output.size() ||
+        input.size() > static_cast<std::size_t>(std::numeric_limits<int>::max()))
+        throw std::runtime_error("invalid FFTW plan size");
+    FftwPlan plan(fftw_plan_dft_1d(static_cast<int>(input.size()), fftwData(input),
+                                   fftwData(output), sign, fftwPlanningFlags()));
+    if (!plan)
+        throw std::runtime_error("FFTW could not create transform plan");
+    return plan;
 }
 
 ComplexTransform::ComplexTransform(std::size_t count)

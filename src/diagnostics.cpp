@@ -18,7 +18,6 @@ bool finiteValues(const std::vector<double> &values) {
 std::ofstream scientificOutput(const std::filesystem::path &path,
                                std::ios::openmode mode = std::ios::out) {
     auto output = numericOutput(path, mode);
-    output << std::scientific << std::setprecision(6);
     return output;
 }
 

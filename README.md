@@ -105,7 +105,9 @@ The symbols in the equations map directly to `params.txt`:
 | $\nu,p$ | `hyperviscosity`, `hyperviscosityOrder` | Small-scale damping coefficient and power |
 | $\alpha,q$ | `hypoviscosity`, `hypoviscosityOrder` | Large-scale damping coefficient and power |
 
-When $q<0$, the singular zero-mode hypoviscous multiplier is suppressed.
+When $\alpha>0$ and $q<0$, the wavefunction mean is constrained to zero,
+including during intermediate integration stages. The singular hypoviscous
+multiplier at zero is not evaluated.
 Set both damping coefficients to zero for conservative dynamics.
 
 ### Forcing
@@ -203,6 +205,32 @@ transform. Fourier coefficients use the normalization
 ```math
 \widehat{\psi}_k = \frac{1}{N}\sum_j \psi_j e^{-2\pi i j k/N}.
 ```
+
+More precisely, the finite-resolution nonlinear term is
+`-i*g*P_psi[psi*R*P_rho[|psi|^2]]`, where `R` is the selected model's density
+response. Both projectors exclude the Nyquist mode; `P_psi` additionally
+removes the mean when negative-order hypoviscosity is active. The same
+wavefunction projector is applied to every integration-stage RHS and to the
+forcing before injection normalization. The density projector keeps the mean
+and excludes both cutoff endpoints so its physical field remains real.
+
+This density-projected formulation differs at finite resolution from
+projecting the full cubic product only once. Each of its two quadratic
+products is dealiased by 3/2 padding. The nonlinear energy actually reported is
+
+```math
+H_{\mathrm{nl},h}=\frac{gL}{2}\sum_{|m|<N/2}R(k_m)
+\left|\widehat{P_\rho[|\psi|^2]}_m\right|^2.
+```
+
+It approaches the corresponding continuum Hamiltonian above as the density
+becomes resolved. See [Krstulovic and Brachet, Eq. 18](https://arxiv.org/pdf/1010.0116)
+for the density-projected truncated GP formulation.
+
+The nonlinear FFT plans operate directly on reusable, aligned working
+buffers. When `nonlinearityCoefficient` is zero, nonlinear stage evaluations
+return zero without executing FFTs; density transforms still run when needed
+for diagnostics.
 
 ## Requirements
 
@@ -363,6 +391,19 @@ physical snapshot, checkpoint, and restart metadata. An interrupted frame is
 rolled back automatically on the next invocation; fully committed frames are
 retained. A detected restart always takes precedence over
 `initialConditionFile`; use new output directories for an independent run.
+
+Checkpoint format version 2 also stores the diagnostic sums and sample count,
+so running spectrum and flux averages continue across restarts. Original
+version-1 checkpoints remain readable: their sums are reconstructed once from
+the committed instantaneous CSV history, with the precision available in those
+files. Subsequent checkpoints store the sums in full precision. Recovery uses
+bounded memory and leaves clean CSV files in place.
+
+The stage-projection correction changes trajectories relative to v0.3.0 when
+excluded modes would have been generated in intermediate stages. Existing
+checkpoints continue using the corrected method; new runs are needed for
+comparisons with the previous implementation. Older executables cannot read
+the new version-2 checkpoints.
 
 HDF5 files can also be used as `initialConditionFile` values. When HDF5 support
 is enabled, convert a snapshot back to the established text layout with:
